@@ -6,7 +6,7 @@
 #include<string.h> 
 #include<arpa/inet.h> 
 #include<stdlib.h>
-#define CLI_PORT 2100
+#define CLI_PORT 50051
 #define BUFF_SIZE 30
 
 int main(int argc,char **argv) 

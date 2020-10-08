@@ -27,7 +27,7 @@ main( )
 
     bzero(&sa,sizeof(sa));
 
-    sa.sin_port=htons(2100);
+    sa.sin_port=htons(50051);
 
     sa.sin_addr.s_addr=htonl(0);
 
