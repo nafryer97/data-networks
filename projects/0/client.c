@@ -3,9 +3,11 @@
 #include<sys/socket.h> 
 #include<netinet/in.h> 
 #include<time.h> 
+#include<unistd.h>
 #include<string.h> 
 #include<arpa/inet.h> 
 #include<stdlib.h>
+
 #define CLI_PORT 2100
 #define BUFF_SIZE 30
 
@@ -38,7 +40,7 @@ int main(int argc,char **argv)
 	{ 
 		printf("\nConnected Successfully");
 	} 
-	if((re=(read(clisoc,recbuff,sizeof(recbuff),0)))<0)
+	if((re=(read(clisoc,recbuff,sizeof(recbuff))))<0)
 	{
 		printf("Read Error");
 		exit(0);
