@@ -1,13 +1,5 @@
 #include"server.h"
 
-#ifndef CLI_PORT
-#define CLI_PORT 50051
-#endif
-
-#ifndef BUFF_SIZE
-#define BUFF_SIZE 30
-#endif
-
 int main(int argc, char** argv)
 {
     /*
@@ -30,7 +22,7 @@ int main(int argc, char** argv)
 
     if (socketfd<0)
     {
-        printf("Error in socket.\n");
+        perror("Error in socket.\n");
         return EXIT_FAILURE;
     }
     else
@@ -49,7 +41,7 @@ int main(int argc, char** argv)
 
     if (bind(socketfd, (struct sockaddr*) &sa, sizeof(sa)) < 0 )
     {
-        printf("Error in binding\n");
+        perror("Error in binding\n");
     }
     else
     {
@@ -62,13 +54,29 @@ int main(int argc, char** argv)
     {
         len=sizeof(ch);
         conntfd=accept(socketfd,(struct sockaddr*)&cli,&len);
-        printf("Accepted.\n");
+
+        if (conntfd<0)
+        {
+            perror("Error accepting connection.\n");
+            return EXIT_FAILURE;
+        }
+        else
+        {
+            printf("Accepted.\n");
+        }
+
         tick=time(NULL);
         snprintf(str,sizeof(str),"%s",ctime(&tick));
         //printf("%s",str);
-        write(conntfd,str,100);
+        if(write(conntfd,str,100)<0)
+        {
+            perror("Error writing to socket file descriptor.\n");
+            return EXIT_FAILURE;
+        }
+        else
+        {
+            return EXIT_SUCCESS;
+        }
     }
-    
-
     return EXIT_SUCCESS;
 }
