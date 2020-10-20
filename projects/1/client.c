@@ -7,7 +7,7 @@ int main(int argc, char** argv)
     
     char* ipAddress;
 
-    char recbuff[BUFF_SIZE];
+    char recbuff[DEFAULT_BUFFER_SIZE];
     
     struct sockaddr_in cliaddr;
     bzero(&cliaddr,sizeof(cliaddr));
@@ -25,7 +25,12 @@ int main(int argc, char** argv)
     }
     else
     {
+        //
         //no command-line arguments were provided, ask for ip address
+        //
+        //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
+        //
+        //
         char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
         memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
 
@@ -44,6 +49,7 @@ int main(int argc, char** argv)
         }
         
         ipAddress = argument;
+        free(inputBuf);
     }
 
     cliaddr.sin_addr.s_addr = inet_addr(ipAddress);
@@ -62,6 +68,7 @@ int main(int argc, char** argv)
     if (connect(clisoc, (struct sockaddr *) &cliaddr, sizeof(cliaddr)) < 0)
     {
         perror("Connection Error.\n");
+        close(clisoc);
         return EXIT_FAILURE;
     }
     else
@@ -72,10 +79,43 @@ int main(int argc, char** argv)
     if ((re = read(clisoc, recbuff, sizeof(recbuff))) < 0)
     {
         perror("Read Error.\n");
+        close(clisoc);
         return EXIT_FAILURE;
     }
 
-    printf("The current data and time is %s\n",recbuff);
+    printf("Mesage from server: %s\n", recbuff);
+    
+    char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+    
+    while(1)
+    {
+        printf("Please enter a message to send to the server. \"exit\" to exit.\n");
+
+        fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
+       
+        if (write(clisoc,inputBuf,DEFAULT_BUFFER_SIZE)<0)
+        {
+            perror("Error sending input to server.");
+        }
+
+        if ((re = read(clisoc,recbuff,DEFAULT_BUFFER_SIZE)) > 0)
+        {
+            printf("Received from server: %s\n", recbuff);
+            memset(recbuff,'\0', DEFAULT_BUFFER_SIZE);
+        }
+        
+        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
+    }
+        
+        /*if(send(clisoc,argument,sizeof(argument,0))<0)
+        {
+            perror("Error sending input to server.");
+            continue;
+        }*/
+        
+    free(inputBuf);
+
     close(clisoc);
 
     return EXIT_SUCCESS;

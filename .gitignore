@@ -6,5 +6,6 @@
 *.fls
 *.log
 *.o
+*.swp
 server
 client

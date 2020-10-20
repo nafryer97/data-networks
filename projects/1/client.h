@@ -15,12 +15,8 @@
 #define CLI_PORT 50051
 #endif 
 
-#ifndef BUFF_SIZE
-#define BUFF_SIZE 30
-#endif
-
 #ifndef DEFAULT_BUFFER_SIZE
-#define DEFAULT_BUFFER_SIZE 64
+#define DEFAULT_BUFFER_SIZE 1024
 #endif
 
 

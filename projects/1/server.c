@@ -13,11 +13,42 @@ int main(int argc, char** argv)
     int len;
     int ch;
 
-    char str[100];
+    int  cliPort;
 
-    time_t tick;
+    // Server needs to take an argument that specifies the port it is listening to.
+    if (argc > 1)
+    {
+        //argv[0] is just the name of the executable
+       cliPort  = atoi(argv[1]);
+    }
+    else
+    {
+        //
+        //no command-line arguments were provided, ask for port
+        //
+        //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
+        //
+        char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
 
-    //system call
+        char* argument = NULL;
+        
+        printf("Please enter the port number.\n");
+        
+        while(argument == NULL)
+        {
+            argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
+            if (inputBuf[strlen(inputBuf)-1] != '\n')
+            {
+                printf("Input too long. Please try again.\n");
+                argument = NULL;
+            }
+        }
+        
+        cliPort = atoi(argument);
+        free(inputBuf);
+    }   
+
     socketfd = socket(AF_INET,SOCK_STREAM,0);
 
     if (socketfd<0)
@@ -36,19 +67,24 @@ int main(int argc, char** argv)
     /*
      * https://jameshfisher.com/2016/12/21/htons/
      */
-    sa.sin_port=htons(CLI_PORT);
+    sa.sin_port=htons(cliPort);
     sa.sin_addr.s_addr=htonl(0);
 
     if (bind(socketfd, (struct sockaddr*) &sa, sizeof(sa)) < 0 )
     {
         perror("Error in binding\n");
+        return EXIT_FAILURE;
     }
     else
     {
         printf("Bound Successfully\n");
     }
 
-    listen(socketfd,50);
+    if(listen(socketfd,50)<0)
+    {
+        perror("Error listening for connections.");
+        return EXIT_FAILURE;
+    }
 
     for(;;)
     {
@@ -58,25 +94,47 @@ int main(int argc, char** argv)
         if (conntfd<0)
         {
             perror("Error accepting connection.\n");
-            return EXIT_FAILURE;
+            continue;
         }
         else
         {
             printf("Accepted.\n");
         }
 
-        tick=time(NULL);
-        snprintf(str,sizeof(str),"%s",ctime(&tick));
-        //printf("%s",str);
-        if(write(conntfd,str,100)<0)
+        char greeting[]  = "Welcome! Please enter a command. \"goodbye\" to exit.";
+            
+        if(send(conntfd,greeting,sizeof(greeting),0)<0)
         {
-            perror("Error writing to socket file descriptor.\n");
-            return EXIT_FAILURE;
+            perror("Error sending greeting message.");
+            close(conntfd);
+            continue;
         }
         else
         {
-            return EXIT_SUCCESS;
+           char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+           time_t timer = time(NULL);
+           
+           while (1)
+           {
+                int numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
+                if (numRead > 0)
+                {
+                    printf("Received from client: %s\n",clientMsg);
+                    if(write(conntfd,clientMsg,DEFAULT_BUFFER_SIZE)<0)
+                    {
+                        perror("Error echoing client message.");
+                        break;
+                    }
+                }
+
+                memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+           }
+           free(clientMsg);
         }
+
+        close(conntfd);
     }
+    
     return EXIT_SUCCESS;
 }
