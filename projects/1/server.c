@@ -1,5 +1,67 @@
 #include"server.h"
 
+int checkCurrency(char* input)
+{
+    char currencies[6][18] = {
+                                "US Dollar",
+                                "Canadian Dollar",
+                                "Euro",
+                                "British Pound",
+                                "Japanese Yen",
+                                "Swiss Franc"
+    };
+
+    int i=0;
+    for(i=0; i<6; ++i)
+    {
+        //printf("Comparing %s and %s\n", input, currencies[i]);
+        //printf("%i\n", strcmp(input, currencies[i]));
+        if (strcmp(input, currencies[i]) == 0)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+char* checkPassword(int currency, char* password)
+{
+    char passwords[6][9] = {
+                                "uCh781fY",
+                                "Cfw61RqV",
+                                "Pd82bG57",
+                                "Crc51RqV",
+                                "wD82bV67",
+                                "G6M7p8az"
+    };
+
+    char values[6][24] = {
+                            "11081.00",
+                            "14632.87",
+                            "9359.20",
+                            "8578.96",
+                            "1158748.55",
+                            "10100.44"
+    };
+
+    //printf("Comparing %s and %s\n", password, passwords[currency]);
+    //printf("%i\n", strcmp(password, passwords[currency]));
+    if (strcmp(password,passwords[currency]) == 0)
+    {
+        char* result = malloc(24);
+        strcpy(result, values[currency]);
+        return result;        
+    }
+    else
+    {
+        char* result = malloc(24);
+        strcpy(result,"Passwords do not match.");
+        return result;
+    }
+
+}
+
 int main(int argc, char** argv)
 {
     /*
@@ -15,6 +77,7 @@ int main(int argc, char** argv)
 
     int  cliPort;
 
+    
     // Server needs to take an argument that specifies the port it is listening to.
     if (argc > 1)
     {
@@ -93,16 +156,16 @@ int main(int argc, char** argv)
 
         if (conntfd<0)
         {
-            perror("Error accepting connection.\n");
+            perror("Error accepting connection.");
             continue;
         }
         else
         {
             printf("Accepted.\n");
         }
+        
+        char greeting[] = "hello client! this is server!";
 
-        char greeting[]  = "Welcome! Please enter a command. \"goodbye\" to exit.";
-            
         if(send(conntfd,greeting,sizeof(greeting),0)<0)
         {
             perror("Error sending greeting message.");
@@ -112,29 +175,82 @@ int main(int argc, char** argv)
         else
         {
            char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
-           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
-           time_t timer = time(NULL);
-           
-           while (1)
-           {
-                int numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
-                if (numRead > 0)
-                {
-                    printf("Received from client: %s\n",clientMsg);
-                    if(write(conntfd,clientMsg,DEFAULT_BUFFER_SIZE)<0)
-                    {
-                        perror("Error echoing client message.");
-                        break;
-                    }
-                }
+           char* currency = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+           char* password = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
 
-                memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+           memset(currency, '\0', DEFAULT_BUFFER_SIZE);
+           memset(password, '\0', DEFAULT_BUFFER_SIZE);
+           
+           time_t timer = time(NULL);
+
+           int numRead = 0;           
+           for(;;)
+           {
+               numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
+               
+               if (numRead > 0)
+               {
+                   if(write(conntfd,clientMsg,numRead)<0)
+                   {
+                       perror("Error sending acknowledgement.");
+                       break;
+                   }
+
+                   strcpy(currency, clientMsg);
+                   break;
+               }
            }
+
+           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+            
+           while((time(NULL) - timer) < 30)
+           { 
+               numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
+               
+               if (numRead > 0)
+               {
+                  // if(write(conntfd,"Received.",10)<0)
+                   //{
+                   //    perror("Error sending acknowledgement.");
+                   //}
+
+                   strcpy(password, clientMsg);
+                   break;
+               }
+           }
+
+           if (strlen(password) > 0 && strlen(currency) > 0)
+           {
+               //printf("Input: %s Password: %s\n", currency, password);
+               int match = checkCurrency(currency);
+               if (match > -1)
+               {
+                    char* response = checkPassword(match,password);
+                    if(write(conntfd,response,64) < 0)
+                    {
+                        perror("Error sending response.");
+                    }
+                    free(response);
+               }
+               else
+               {
+                    if(write(conntfd,"Currency did not match list of currencies.",64) < 0)
+                    {
+                        perror("Error sending response.");
+                    }
+               }
+           }
+
            free(clientMsg);
+           free(password);
+           free(currency);
         }
+
+        //write(conntfd,"Server Timed Out.",64);
 
         close(conntfd);
     }
-    
+
     return EXIT_SUCCESS;
 }

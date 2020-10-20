@@ -10,6 +10,10 @@
 #include<time.h>
 #include<errno.h>
 
+int checkCurrency(char* input);
+
+char* checkPassword(int currency, char* password);
+
 #ifndef CLI_PORT
 #define CLI_PORT 50051
 #endif
