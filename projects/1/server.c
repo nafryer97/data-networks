@@ -2,20 +2,17 @@
 
 int checkCurrency(char* input)
 {
-    char currencies[6][18] = {
-                                "US Dollar",
-                                "Canadian Dollar",
-                                "Euro",
-                                "British Pound",
-                                "Japanese Yen",
-                                "Swiss Franc"
-    };
+    const char* currencies[6];
+    currencies[0] = "US Dollar";
+    currencies[1] = "Canadian Dollar";
+    currencies[2] = "Euro";
+    currencies[3] = "British Pound";
+    currencies[4] = "Japanese Yen";
+    currencies[5] = "Swiss Franc";
 
     int i=0;
     for(i=0; i<6; ++i)
     {
-        //printf("Comparing %s and %s\n", input, currencies[i]);
-        //printf("%i\n", strcmp(input, currencies[i]));
         if (strcmp(input, currencies[i]) == 0)
         {
             return i;
@@ -27,39 +24,221 @@ int checkCurrency(char* input)
 
 char* checkPassword(int currency, char* password)
 {
-    char passwords[6][9] = {
-                                "uCh781fY",
-                                "Cfw61RqV",
-                                "Pd82bG57",
-                                "Crc51RqV",
-                                "wD82bV67",
-                                "G6M7p8az"
-    };
+    const char* passwords[6]; 
+    passwords[0] = "uCh781fY";
+    passwords[1] = "Cfw61RqV";
+    passwords[2] = "Pd82bG57";
+    passwords[3] = "Crc51RqV";
+    passwords[4] = "wD82bV67";
+    passwords[5] = "G6M7p8az";
 
-    char values[6][24] = {
-                            "11081.00",
-                            "14632.87",
-                            "9359.20",
-                            "8578.96",
-                            "1158748.55",
-                            "10100.44"
-    };
+    const char* values[6];
+    values[0] = "11081.00";
+    values[1] = "14632.87";
+    values[2] = "9359.20";
+    values[3] = "8578.96";
+    values[4] = "1158748.55";
+    values[5] = "10100.44";
 
-    //printf("Comparing %s and %s\n", password, passwords[currency]);
-    //printf("%i\n", strcmp(password, passwords[currency]));
-    if (strcmp(password,passwords[currency]) == 0)
+    char* result;
+    
+    if (currency < 0 || currency > 5)
     {
-        char* result = malloc(24);
-        strcpy(result, values[currency]);
-        return result;        
+        result = strdup("Invalid Currency.");
+    }
+    else if (strcmp(password,passwords[currency]) == 0)
+    {
+        result = strdup(values[currency]);
     }
     else
     {
-        char* result = malloc(24);
-        strcpy(result,"Passwords do not match.");
-        return result;
+        result = strdup("Passwords do not match.");
     }
 
+    return result;
+}
+
+void removeNewLine(char* str)
+{
+    char* nl = strchr(str,'\n');
+    if (nl != NULL)
+    {
+        *nl='\0';
+    }
+}
+
+int getPortNumCli()
+{   //
+    //no command-line arguments were provided, ask for port
+    //
+    //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
+    //
+    int cliPort = 0;
+    char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+
+    char* argument = NULL;
+        
+    printf("Please enter the port number.\n");
+        
+    while(argument == NULL)
+    {
+        argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
+        
+        if (*(inputBuf + (strlen(inputBuf) - 1)) != '\n')
+        {
+            printf("Input too long. Please try again.\n");
+            argument = NULL;
+            memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+        }
+        else if (atoi(argument) < DEFAULT_MIN_PORT || atoi(argument) > DEFAULT_MAX_PORT)
+        {
+            printf("Must use one of ports %i-%i.\n",DEFAULT_MIN_PORT,DEFAULT_MAX_PORT);
+            argument=NULL;
+            memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+        }
+    }
+   
+    removeNewLine(argument); 
+    
+    cliPort = atoi(argument);
+    
+    free(inputBuf);
+
+    return cliPort;
+}
+
+int openSocket()
+{
+    int socketfd = socket(AF_INET,SOCK_STREAM,0);
+
+    if (socketfd<0)
+    {
+        perror("Error in socket.\n");
+    }
+    else
+    {
+        printf("Socket Opened.\n");
+    }
+
+    return socketfd;
+}
+
+int bindPort(int socketfd, int cliPort, struct sockaddr_in* sa)
+{
+    //sets all bytes of sa to 0
+    memset(sa,0,sizeof(struct sockaddr_in));
+
+    /*
+     * https://jameshfisher.com/2016/12/21/htons/
+     */
+    (*sa).sin_port=htons(cliPort);
+    (*sa).sin_addr.s_addr=htonl(0);
+
+    if (bind(socketfd, (struct sockaddr*) sa, sizeof(struct sockaddr_in)) < 0 )
+    {
+        perror("Error in binding\n");
+        return -1;
+    }
+    else
+    {
+        printf("Bound Successfully\n");
+        return 0;
+    }
+}
+
+void processInput(int clientfd, char* currency, char* password)
+{
+    int match = checkCurrency(currency);
+    if (match > -1)
+    {
+        char* response = checkPassword(match,password);
+        if(send(clientfd,response,strlen(response),0) < 0)
+        {
+            perror("Error sending response.");
+        }
+        free(response);
+    }
+    else
+    {
+        char response[] = "Currency did not match list of currencies.";
+        
+        if(send(clientfd,response,strlen(response),0) < 0)
+        {
+            perror("Error sending response.");
+        }
+    }
+}
+
+void readCurrency(int clientfd, char* currency)
+{
+    char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+    memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+
+    for(;;)
+    {
+        int numRead = read(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1));
+
+        if (numRead > 0)
+        {
+            if(send(clientfd,clientMsg,numRead,0)<0)
+            {
+                perror("Error sending acknowledgement.");
+                break;
+            }
+
+            currency = strdup(clientMsg);
+            break;
+        }
+    }
+
+    free(clientMsg);
+}
+
+void readPassword(int clientfd, char* password)
+{
+    char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+    memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
+
+    time_t timer = time(NULL);
+    
+    while((time(NULL) - timer) < 30)
+    { 
+        int numRead = read(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1));
+        if (numRead > 0)
+        {
+         /*   
+            if(write(conntfd,"Received.",10)<0)
+            {
+                perror("Error sending acknowledgement.");
+            }
+         */
+            password = strdup(clientMsg);
+            break;
+        }
+    }
+
+    free(clientMsg);
+}
+
+void currencyProgram(int clientfd)
+{
+    char* currency;
+    char* password;
+
+    readCurrency(clientfd, currency);
+    readPassword(clientfd, password);
+
+    if (currency)
+    {
+        if (password)
+        {
+            processInput(clientfd, currency, password);
+            free(password);
+        }
+    
+        free(currency);
+    }
 }
 
 int main(int argc, char** argv)
@@ -71,90 +250,56 @@ int main(int argc, char** argv)
     struct sockaddr_in cli;
     
     int socketfd;
-    int conntfd;
+    int clientfd;
     int len;
-    int ch;
 
-    int  cliPort;
+    int cliPort;
 
     
     // Server needs to take an argument that specifies the port it is listening to.
     if (argc > 1)
     {
-        //argv[0] is just the name of the executable
-       cliPort  = atoi(argv[1]);
-    }
-    else
-    {
-        //
-        //no command-line arguments were provided, ask for port
-        //
-        //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
-        //
-        char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
-        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
-
-        char* argument = NULL;
-        
-        printf("Please enter the port number.\n");
-        
-        while(argument == NULL)
+        //first arg is just the name of the executable
+        ++argv;
+        removeNewLine(*argv);
+        int test = atoi(*argv);
+        if(test < DEFAULT_MIN_PORT || test > DEFAULT_MAX_PORT)
         {
-            argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
-            if (inputBuf[strlen(inputBuf)-1] != '\n')
-            {
-                printf("Input too long. Please try again.\n");
-                argument = NULL;
-            }
+            printf("Invalid port number: %s\n", *argv);
+            getPortNumCli();
         }
-        
-        cliPort = atoi(argument);
-        free(inputBuf);
+        else
+        {
+            cliPort = test;
+        }
+    }
+    else
+    {
+        //no command-line arguments were provided, ask for port
+        cliPort = getPortNumCli(); 
     }   
+    
+    printf("Using port %i\n", cliPort);
+    socketfd = openSocket();
 
-    socketfd = socket(AF_INET,SOCK_STREAM,0);
-
-    if (socketfd<0)
+    if (bindPort(socketfd, cliPort, &sa) < 0)
     {
-        perror("Error in socket.\n");
+        close(socketfd);
         return EXIT_FAILURE;
-    }
-    else
-    {
-        printf("Socket Openeed.\n");
-    }
-
-    //sets all bytes of sa to 0
-    bzero(&sa,sizeof(sa));
-
-    /*
-     * https://jameshfisher.com/2016/12/21/htons/
-     */
-    sa.sin_port=htons(cliPort);
-    sa.sin_addr.s_addr=htonl(0);
-
-    if (bind(socketfd, (struct sockaddr*) &sa, sizeof(sa)) < 0 )
-    {
-        perror("Error in binding\n");
-        return EXIT_FAILURE;
-    }
-    else
-    {
-        printf("Bound Successfully\n");
     }
 
     if(listen(socketfd,50)<0)
     {
-        perror("Error listening for connections.");
+        perror("Error setting socket to listen.");
         return EXIT_FAILURE;
     }
 
     for(;;)
     {
-        len=sizeof(ch);
-        conntfd=accept(socketfd,(struct sockaddr*)&cli,&len);
+        len=sizeof(struct sockaddr_in);
+        clientfd=accept(socketfd,(struct sockaddr*)&cli,&len);
 
-        if (conntfd<0)
+        if (clientfd<0)
         {
             perror("Error accepting connection.");
             continue;
@@ -163,93 +308,12 @@ int main(int argc, char** argv)
         {
             printf("Accepted.\n");
         }
-        
-        char greeting[] = "hello client! this is server!";
 
-        if(send(conntfd,greeting,sizeof(greeting),0)<0)
-        {
-            perror("Error sending greeting message.");
-            close(conntfd);
-            continue;
-        }
-        else
-        {
-           char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
-           char* currency = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
-           char* password = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
-
-           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
-           memset(currency, '\0', DEFAULT_BUFFER_SIZE);
-           memset(password, '\0', DEFAULT_BUFFER_SIZE);
-           
-           time_t timer = time(NULL);
-
-           int numRead = 0;           
-           for(;;)
-           {
-               numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
-               
-               if (numRead > 0)
-               {
-                   if(write(conntfd,clientMsg,numRead)<0)
-                   {
-                       perror("Error sending acknowledgement.");
-                       break;
-                   }
-
-                   strcpy(currency, clientMsg);
-                   break;
-               }
-           }
-
-           memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
-            
-           while((time(NULL) - timer) < 30)
-           { 
-               numRead = read(conntfd,clientMsg,DEFAULT_BUFFER_SIZE);
-               
-               if (numRead > 0)
-               {
-                  // if(write(conntfd,"Received.",10)<0)
-                   //{
-                   //    perror("Error sending acknowledgement.");
-                   //}
-
-                   strcpy(password, clientMsg);
-                   break;
-               }
-           }
-
-           if (strlen(password) > 0 && strlen(currency) > 0)
-           {
-               //printf("Input: %s Password: %s\n", currency, password);
-               int match = checkCurrency(currency);
-               if (match > -1)
-               {
-                    char* response = checkPassword(match,password);
-                    if(write(conntfd,response,64) < 0)
-                    {
-                        perror("Error sending response.");
-                    }
-                    free(response);
-               }
-               else
-               {
-                    if(write(conntfd,"Currency did not match list of currencies.",64) < 0)
-                    {
-                        perror("Error sending response.");
-                    }
-               }
-           }
-
-           free(clientMsg);
-           free(password);
-           free(currency);
-        }
+        currencyProgram(clientfd);
 
         //write(conntfd,"Server Timed Out.",64);
 
-        close(conntfd);
+        close(clientfd);
     }
 
     return EXIT_SUCCESS;
