@@ -23,4 +23,4 @@ submission : server.c server.h client.c client.h
 	cp server.c fryerP1Server.h
 
 clean :
-	rm client.o server.o tests.o server client tests fryerP1* 
+	rm client.o server.o tests.o server client tests fryerP1* *.out 
