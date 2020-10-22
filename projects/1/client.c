@@ -1,5 +1,209 @@
 #include"client.h"
 
+int readFromServer(int clisoc)
+{
+    int nread = 0;
+    int errsv = 0;
+
+    char* sbuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+    memset(sbuf, '\0', DEFAULT_BUFFER_SIZE);
+    
+    time_t timer = time(NULL);
+
+    while(nread == 0 && (time(NULL) - timer) < 5)
+    {
+        nread = read(clisoc,sbuf,DEFAULT_BUFFER_SIZE);
+            
+        if (nread < 0)
+        {
+            perror("Error waiting on output from server.");
+            errsv = errno;
+            free(sbuf);
+            return errno;
+        }
+    }
+    
+    if (nread > 0)
+    {
+        printf("From Server: %s\n", sbuf);
+    }
+    
+    return 0;
+}
+
+int sendToServer(int clisoc, char* str)
+{
+    int errsv = 0;
+    
+    if (send(clisoc,str,(strlen(str)+1),0)<0)
+    {
+        perror("Error sending input to server.");
+        errsv = errno;
+        return errsv;
+    }
+
+    return 0;
+}
+
+int currencyProgram(int clisoc, int* errsv)
+{
+    int nread = 0;
+    
+    char* ibuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    memset(ibuf, '\0', DEFAULT_BUFFER_SIZE);
+
+    /*
+     * 1. Prompt with welcome message after successful connection. Get input from the keyboard and 
+     * send it to the server.
+     */
+
+    printf("Please enter a currency name.\n");
+
+    fgets(ibuf, DEFAULT_BUFFER_SIZE, stdin);
+
+    removeNewLine(ibuf);
+
+    char* message = strndup(ibuf, (strlen(ibuf)+1));
+
+    if ( ( *errsv = sendToServer(clisoc, message)) != 0)
+    {
+        free(message);
+        free(ibuf);
+        return -1;
+    }
+
+    free(message);
+
+    /*
+     * 2. Server should acknowledge receipt of currency input from client.
+     */
+
+    if ( (*errsv = readFromServer(clisoc)) != 0)
+    {
+        free(ibuf);
+        return -1;
+    }
+
+    memset(ibuf, '\0', DEFAULT_BUFFER_SIZE);
+
+    /*
+     * 3. The client will ask for the user's password after it has received 
+     * acknowledgement from the server. The password is sent to the server.
+     */
+
+    printf("Please enter the password.\n");
+
+    fgets(ibuf, DEFAULT_BUFFER_SIZE, stdin);
+
+    removeNewLine(ibuf);
+
+    message = strndup(ibuf, (strlen(ibuf)+1));
+
+    if ( ( *errsv = sendToServer(clisoc, message)) != 0)
+    {
+        free(message);
+        free(ibuf);
+        return -1;
+    }
+
+    free(message);
+
+    /*
+     * 4. Server will verify password and currency against list of legitimate pairs.
+     * If there is a match, the server will send the corresponding bitcoin value. Otherwise,
+     * the server will send a failure message.
+     */
+    
+    if ( ( *errsv = readFromServer(clisoc)) != 0)
+    {
+        free(ibuf);
+        return -1;
+    }
+        
+    free(ibuf);
+
+    return 0;
+}
+
+void removeNewLine(char* str)
+{
+    char* nl = strchr(str,'\n');
+    if (nl != NULL)
+    {
+        *nl='\0';
+    }
+}
+
+char* getServerAddressCli()
+{
+    char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+
+    char* argument = NULL;
+        
+    printf("Please enter the server's ip address.\n");
+        
+    while(argument == NULL)
+    {
+        argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
+        
+        if (*(inputBuf + (strlen(inputBuf) - 1)) != '\n')
+        {
+            printf("Input too long. Please try again.\n");
+            argument = NULL;
+            memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+        }
+    }
+    
+    removeNewLine(inputBuf);
+    argument = strndup(inputBuf, (strlen(inputBuf)+1));
+    
+    free(inputBuf);
+    
+    return argument;
+}
+
+int getPortNumCli()
+{   //
+    //no command-line arguments were provided, ask for port
+    //
+    //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
+    //
+    int cliPort = 0;
+    char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+
+    char* argument = NULL;
+        
+    printf("Please enter the port number.\n");
+        
+    while(argument == NULL)
+    {
+        argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
+        
+        if (*(inputBuf + (strlen(inputBuf) - 1)) != '\n')
+        {
+            printf("Input too long. Please try again.\n");
+            argument = NULL;
+            memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+        }
+        else if (atoi(argument) < DEFAULT_MIN_PORT || atoi(argument) > DEFAULT_MAX_PORT)
+        {
+            printf("Must use one of ports %i-%i.\n",DEFAULT_MIN_PORT,DEFAULT_MAX_PORT);
+            argument=NULL;
+            memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+        }
+    }
+   
+    removeNewLine(argument); 
+    
+    cliPort = atoi(argument);
+    
+    free(inputBuf);
+
+    return cliPort;
+}
+
 int main(int argc, char** argv)
 { 
     int clisoc;
@@ -11,63 +215,45 @@ int main(int argc, char** argv)
     char recbuff[DEFAULT_BUFFER_SIZE];
     
     struct sockaddr_in cliaddr;
-    bzero(&cliaddr,sizeof(cliaddr));
 
+    memset(&cliaddr,0,sizeof(struct sockaddr_in));
+    
     /*
-     * We need the ip address and port  of the server 
+     * Client needs to either take server ip address and port command-line 
+     * arguments, or it needs to ask for them once it starts.
      */
     if (argc > 2)
     {
-        //argv[0] is just the name of the executable
-        ipAddress = argv[1];
-        cli_Port = atoi(argv[2]);
+        //first arg is just the name of the executable
+        //second arg should be ip address of server
+        ++argv;
+        removeNewLine(*argv);
+        ipAddress = strndup(*argv, (strlen(*argv)+1));
+
+        //second argument should be port that server is listening to
+        ++argv;
+        removeNewLine(*argv);
+        int test = atoi(*argv);
+        if(test < DEFAULT_MIN_PORT || test > DEFAULT_MAX_PORT)
+        {
+            printf("Invalid port number: %s\n", *argv);
+            cli_Port = getPortNumCli();
+        }
+        else
+        {
+            cli_Port = test;
+        }
     }
     else
     {
-        //
-        //no command-line arguments were provided, ask for ip address
-        //
-        //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
-        //
-        //
-        char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
-        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
+        //no command-line arguments were provided, ask for server and port
+        ipAddress = getServerAddressCli();
+        cli_Port = getPortNumCli();
 
-        char* argument = NULL;
-        
-        printf("Please provide the server's IP address.\n");
-        
-        while(argument == NULL)
-        {
-            argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
-            if (inputBuf[strlen(inputBuf)-1] != '\n')
-            {
-                printf("Input too long. Please try again.\n");
-                argument = NULL;
-            }
-        }
-        
-        strcpy(ipAddress, argument);
-
-        printf("Please enter the port.\n");
-
-        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
-        argument = NULL;
-
-        while(argument == NULL)
-        {
-            argument = fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
-            if (inputBuf[strlen(inputBuf)-1] != '\n')
-            {
-                printf("Input too long. Please try again.\n");
-                argument = NULL;
-            }
-        }
-
-        cli_Port = atoi(argument);
-
-        free(inputBuf);
-    }
+    }   
+    
+    printf("Server address %s\n", ipAddress);
+    printf("Using port %i\n", cli_Port);
 
     cliaddr.sin_family = AF_INET;
     cliaddr.sin_port = htons(cli_Port);
@@ -85,107 +271,43 @@ int main(int argc, char** argv)
         printf("Socket Opened.\n");
     }
 
-    char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
-    memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
+    //char* ibuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
+    //memset(ibuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
     
-    while(1)
+    int errsv = 0;
+
+    for(;;)
     {
         if (connect(clisoc, (struct sockaddr *) &cliaddr, sizeof(cliaddr)) < 0)
         {
              perror("Connection Error.\n");
-             close(clisoc);
-             return EXIT_FAILURE;
+             sleep(2);
+             continue;
         }
         else
         {
             printf("Connection Successful.\n");
         }
-        if ((re = read(clisoc, recbuff, sizeof(recbuff))) < 0)
+
+        int result = -1;
+        while ( result < 0 && errsv == 0)
         {
-            perror("Read Error.\n");
-            close(clisoc);
-            return EXIT_FAILURE;
+            result = currencyProgram(clisoc, &errsv);
         }
         
-        printf("Mesage from server: %s\n", recbuff);
-        
-        printf("Please enter a currency name.\n");
-
-        fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
-      
-        inputBuf[strlen(inputBuf) - 1] = '\0';
-
-        if (write(clisoc,inputBuf,DEFAULT_BUFFER_SIZE)<0)
+        if (result == 0 && errsv == 0)
         {
-            perror("Error sending input to server.");
             close(clisoc);
-            free(inputBuf);
-            return EXIT_FAILURE;
+            break;
         }
-
-        if ((re = read(clisoc,recbuff,DEFAULT_BUFFER_SIZE)) > 0)
+        else if (result < 0 && errsv != 0)
         {
-            printf("Received from server: %s\n", recbuff);
-            memset(recbuff,'\0', DEFAULT_BUFFER_SIZE);
-        }
-        else
-        {
-            perror("Error in server acknowledgement.");
             close(clisoc);
-            free(inputBuf);
-            return EXIT_FAILURE;
-        }
-
-        memset(inputBuf, '\0', DEFAULT_BUFFER_SIZE);
-
-        printf("Please enter the password.\n");
-
-        fgets(inputBuf, DEFAULT_BUFFER_SIZE, stdin);
-
-        inputBuf[strlen(inputBuf) - 1] = '\0';
-        
-        if (write(clisoc,inputBuf,DEFAULT_BUFFER_SIZE)<0)
-        {
-            perror("Error sending password to server.");
-            close(clisoc);
-            free(inputBuf);
-            return EXIT_FAILURE;
-        }
-
-        int numRead = 0;
-
-        memset(recbuff, '\0', DEFAULT_BUFFER_SIZE);
-
-        while(numRead == 0)
-        {
-            numRead = read(clisoc,recbuff,DEFAULT_BUFFER_SIZE);
-            if (numRead == 0)
-            {
-                continue;
-            }
-            else
-            {
-                if (numRead > 0)
-                {
-                    printf("Result: %s\n", recbuff);
-                }
-                else
-                {
-                    perror("Error getting response from server.");
-                }
-            }
+            break;
         }
     }
-        
-        /*if(send(clisoc,argument,sizeof(argument,0))<0)
-        {
-            perror("Error sending input to server.");
-            continue;
-        }*/
-        
-    free(inputBuf);
 
-    close(clisoc);
+    free(ipAddress);
 
     return EXIT_SUCCESS;
 }

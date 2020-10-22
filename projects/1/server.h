@@ -40,10 +40,10 @@ int bindPort(int socketfd, int cliPort, struct sockaddr_in* sa);
 
 void processInput(int clientfd, char* currency, char* password);
 
-void readCurrency(int clientfd, char* currency);
+char* readCurrency(int clientfd);
 
-void readPassword(int clientfd, char* password);
+char* readPassword(int clientfd);
 
-void currencyProgram(int clientfd);
+int currencyProgram(int clientfd);
 
 #endif

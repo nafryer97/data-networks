@@ -2,6 +2,8 @@
 
 int checkCurrency(char* input)
 {
+    //printf("Called checkCurrency.\n");
+    //printf("input: %s\n", input);
     const char* currencies[6];
     currencies[0] = "US Dollar";
     currencies[1] = "Canadian Dollar";
@@ -24,6 +26,9 @@ int checkCurrency(char* input)
 
 char* checkPassword(int currency, char* password)
 {
+    //printf("Called checkPassword.\n");
+    //printf("currency %i\n", currency);
+    //printf("password %s\n", password);
     const char* passwords[6]; 
     passwords[0] = "uCh781fY";
     passwords[1] = "Cfw61RqV";
@@ -149,6 +154,10 @@ int bindPort(int socketfd, int cliPort, struct sockaddr_in* sa)
 
 void processInput(int clientfd, char* currency, char* password)
 {
+    //printf("Called processInput.\n");
+    //printf("currency: %s\n",currency);
+    //printf("password: %s\n", password);
+
     int match = checkCurrency(currency);
     if (match > -1)
     {
@@ -170,75 +179,144 @@ void processInput(int clientfd, char* currency, char* password)
     }
 }
 
-void readCurrency(int clientfd, char* currency)
+char* readCurrency(int clientfd)
 {
-    char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
-    memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
-
-    for(;;)
-    {
-        int numRead = read(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1));
-
-        if (numRead > 0)
-        {
-            if(send(clientfd,clientMsg,numRead,0)<0)
-            {
-                perror("Error sending acknowledgement.");
-                break;
-            }
-
-            currency = strdup(clientMsg);
-            break;
-        }
-    }
-
-    free(clientMsg);
-}
-
-void readPassword(int clientfd, char* password)
-{
+    //printf("Called readCurrency.\n");
     char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
 
     time_t timer = time(NULL);
     
-    while((time(NULL) - timer) < 30)
-    { 
-        int numRead = read(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1));
+    char* currency = NULL;
+
+    while(((int)(time(NULL) - timer)) < 30)
+    {
+        //printf("Timer: %i ", (int)(time(NULL) - timer));
+        int numRead = recv(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1),MSG_DONTWAIT);
+        
+        /*if(((int)(time(NULL)) - timer) % 5 == 0)
+        {
+            fprintf(stdout,"Timer-readCurrency: %i ", (int)(time(NULL) - timer));
+        }*/
         if (numRead > 0)
         {
-         /*   
-            if(write(conntfd,"Received.",10)<0)
+            if(send(clientfd,clientMsg,numRead,0)<0)
             {
                 perror("Error sending acknowledgement.");
             }
-         */
-            password = strdup(clientMsg);
+
+            currency = strdup(clientMsg);
+            break;
+        }
+        else if (numRead < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                sleep(1);
+                continue;
+            }
+
+            perror("Error reading from client.");
             break;
         }
     }
 
+    if (((int)(time(NULL)) - timer) >= 30)
+    {
+        fprintf(stdout, "Timed out waiting on currency.\n");
+    }
+    //printf("currency: %s\n", currency);
+    //fprintf(stdout,"\n");
     free(clientMsg);
+    return currency;
 }
 
-void currencyProgram(int clientfd)
+char* readPassword(int clientfd)
 {
-    char* currency;
-    char* password;
+    //printf("Called readPassword.\n");
 
-    readCurrency(clientfd, currency);
-    readPassword(clientfd, password);
+    char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
+    memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
 
-    if (currency)
-    {
-        if (password)
-        {
-            processInput(clientfd, currency, password);
-            free(password);
-        }
+    time_t timer = time(NULL);
     
-        free(currency);
+    char* password = NULL;
+
+    while(((int)(time(NULL)) - timer) < 30)
+    { 
+        /*if(((int)(time(NULL)) - timer % 5) == 0)
+        {
+            fprintf(stdout,"Timer-readPassword: %i ", (int)(time(NULL) - timer));
+        }*/
+        int numRead = recv(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1),MSG_DONTWAIT);
+        if (numRead > 0)
+        {
+            password = strdup(clientMsg);
+            break;
+        }
+        else if (numRead < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                sleep(1);
+                continue;
+            }
+            perror("Error reading from client.");
+            break;
+        }
     }
+
+    if (((int)(time(NULL)) - timer) >= 30)
+    {
+        fprintf(stdout, "Timed out waiting on password.\n");
+    }
+
+    //printf("password: %s\n", password);
+    //fprintf(stdout,"\n");
+    free(clientMsg);
+    return password;
+}
+
+int currencyProgram(int clientfd)
+{
+    //printf("Called currencyProgram.\n");
+    //time_t timer = time(NULL);
+    char* currency = NULL;
+    char* password = NULL;
+
+    for(;;)
+    {
+        /*if(((int)(time(NULL)) - trigger % 5) == 0)
+        {
+            fprintf(stdout,"Timer-readPassword: %i ", (int)(time(NULL) - trigger));
+        }*/
+        currency = readCurrency(clientfd);
+        
+        if(!currency)
+        {
+            break;
+        }
+        
+        password = readPassword(clientfd);
+
+        if (currency)
+        {
+            if (password)
+            {
+                processInput(clientfd, currency, password);
+                free(password);
+            }
+            
+            free(currency);
+        }
+        else if (!currency && password)
+        {
+            free(password);    
+        }
+    }
+
+    //fprintf(stdout,"\n");
+    return 0;
 }
 
 int main(int argc, char** argv)
@@ -266,7 +344,7 @@ int main(int argc, char** argv)
         if(test < DEFAULT_MIN_PORT || test > DEFAULT_MAX_PORT)
         {
             printf("Invalid port number: %s\n", *argv);
-            getPortNumCli();
+            cliPort = getPortNumCli();
         }
         else
         {
@@ -307,13 +385,12 @@ int main(int argc, char** argv)
         else
         {
             printf("Accepted.\n");
+            currencyProgram(clientfd);        
         }
-
-        currencyProgram(clientfd);
-
+ 
         //write(conntfd,"Server Timed Out.",64);
-
         close(clientfd);
+        printf("Connection Closed. Waiting for new connection...\n");
     }
 
     return EXIT_SUCCESS;
