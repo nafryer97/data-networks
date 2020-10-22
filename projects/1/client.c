@@ -8,26 +8,25 @@ int readFromServer(int clisoc)
     char* sbuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(sbuf, '\0', DEFAULT_BUFFER_SIZE);
     
-    time_t timer = time(NULL);
-
-    while(nread == 0 && (time(NULL) - timer) < 5)
-    {
-        nread = read(clisoc,sbuf,DEFAULT_BUFFER_SIZE);
+    do {
+        nread = recv(clisoc,sbuf,(DEFAULT_BUFFER_SIZE-1),0);
             
         if (nread < 0)
         {
-            perror("Error waiting on output from server.");
+            perror("Error receiving response from server.");
             errsv = errno;
             free(sbuf);
-            return errno;
+            return errsv;
         }
-    }
+
+    } while(nread == 0);
     
     if (nread > 0)
     {
         printf("From Server: %s\n", sbuf);
     }
-    
+   
+    free(sbuf);
     return 0;
 }
 
@@ -271,11 +270,6 @@ int main(int argc, char** argv)
         printf("Socket Opened.\n");
     }
 
-    //char* ibuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
-    //memset(ibuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
-    
-    int errsv = 0;
-
     for(;;)
     {
         if (connect(clisoc, (struct sockaddr *) &cliaddr, sizeof(cliaddr)) < 0)
@@ -289,22 +283,19 @@ int main(int argc, char** argv)
             printf("Connection Successful.\n");
         }
 
-        int result = -1;
-        while ( result < 0 && errsv == 0)
+        int errsv = 0;
+
+        if(currencyProgram(clisoc, &errsv)<0)
         {
-            result = currencyProgram(clisoc, &errsv);
+            printf("%s\n", strerror(errsv));
+            break;
+        }
+        else
+        {
+            printf("Goodbye!\n");
+            break;
         }
         
-        if (result == 0 && errsv == 0)
-        {
-            close(clisoc);
-            break;
-        }
-        else if (result < 0 && errsv != 0)
-        {
-            close(clisoc);
-            break;
-        }
     }
 
     free(ipAddress);

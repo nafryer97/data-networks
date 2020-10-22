@@ -16,5 +16,11 @@ client.o : client.c client.h
 tests.o : tests.c server.h
 	gcc -c tests.c
 
+submission : server.c server.h client.c client.h
+	cp client.c fryerP1Client.c
+	cp server.c fryerP1Server.c
+	cp client.h fryerP1Client.h
+	cp server.c fryerP1Server.h
+
 clean :
-	rm client.o server.o tests.o 
+	rm client.o server.o tests.o server client tests fryerP1* 

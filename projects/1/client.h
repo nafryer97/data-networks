@@ -28,16 +28,37 @@
 #define DEFAULT_MAX_PORT 59999
 #endif
 
+
+/*
+ *  reads output from the server after the connection. returns an int indicating
+ *  success or failure
+ */
 int readFromServer(int clisoc);
 
+/*
+ * sends str to server using socket. returns an int indicating success or failure.
+ */
 int sendToServer(int clisoc, char* str);
 
+/*
+ * coordinates getting input from the user and sending/receing from server. returns an int 
+ * indicating success or failure.
+ */
 int currencyProgram(int clisoc, int* errsv);
 
+/*
+ * replaces the first occurrence of a newline char with the nul character
+ */
 void removeNewLine(char* str);
 
+/*
+ * prompts the user for an ip address from the command line
+ */
 char* getServerAddressCli();
 
+/*
+ * prompts the user for a port number from the command line
+ */
 int getPortNumCli();
 
 #endif

@@ -2,8 +2,6 @@
 
 int checkCurrency(char* input)
 {
-    //printf("Called checkCurrency.\n");
-    //printf("input: %s\n", input);
     const char* currencies[6];
     currencies[0] = "US Dollar";
     currencies[1] = "Canadian Dollar";
@@ -26,9 +24,6 @@ int checkCurrency(char* input)
 
 char* checkPassword(int currency, char* password)
 {
-    //printf("Called checkPassword.\n");
-    //printf("currency %i\n", currency);
-    //printf("password %s\n", password);
     const char* passwords[6]; 
     passwords[0] = "uCh781fY";
     passwords[1] = "Cfw61RqV";
@@ -73,11 +68,12 @@ void removeNewLine(char* str)
 }
 
 int getPortNumCli()
-{   //
-    //no command-line arguments were provided, ask for port
-    //
-    //https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
-    //
+{   
+    /* 
+     * no command-line arguments were provided, ask for port
+     * https://www.geeksforgeeks.org/why-to-use-fgets-over-scanf-in-c/
+     */
+
     int cliPort = 0;
     char* inputBuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE); 
     memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
@@ -154,10 +150,6 @@ int bindPort(int socketfd, int cliPort, struct sockaddr_in* sa)
 
 void processInput(int clientfd, char* currency, char* password)
 {
-    //printf("Called processInput.\n");
-    //printf("currency: %s\n",currency);
-    //printf("password: %s\n", password);
-
     int match = checkCurrency(currency);
     if (match > -1)
     {
@@ -181,7 +173,6 @@ void processInput(int clientfd, char* currency, char* password)
 
 char* readCurrency(int clientfd)
 {
-    //printf("Called readCurrency.\n");
     char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
 
@@ -191,13 +182,8 @@ char* readCurrency(int clientfd)
 
     while(((int)(time(NULL) - timer)) < 30)
     {
-        //printf("Timer: %i ", (int)(time(NULL) - timer));
         int numRead = recv(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1),MSG_DONTWAIT);
         
-        /*if(((int)(time(NULL)) - timer) % 5 == 0)
-        {
-            fprintf(stdout,"Timer-readCurrency: %i ", (int)(time(NULL) - timer));
-        }*/
         if (numRead > 0)
         {
             if(send(clientfd,clientMsg,numRead,0)<0)
@@ -225,16 +211,13 @@ char* readCurrency(int clientfd)
     {
         fprintf(stdout, "Timed out waiting on currency.\n");
     }
-    //printf("currency: %s\n", currency);
-    //fprintf(stdout,"\n");
+
     free(clientMsg);
     return currency;
 }
 
 char* readPassword(int clientfd)
 {
-    //printf("Called readPassword.\n");
-
     char* clientMsg = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(clientMsg, '\0', DEFAULT_BUFFER_SIZE);
 
@@ -244,10 +227,6 @@ char* readPassword(int clientfd)
 
     while(((int)(time(NULL)) - timer) < 30)
     { 
-        /*if(((int)(time(NULL)) - timer % 5) == 0)
-        {
-            fprintf(stdout,"Timer-readPassword: %i ", (int)(time(NULL) - timer));
-        }*/
         int numRead = recv(clientfd,clientMsg,(DEFAULT_BUFFER_SIZE-1),MSG_DONTWAIT);
         if (numRead > 0)
         {
@@ -271,25 +250,17 @@ char* readPassword(int clientfd)
         fprintf(stdout, "Timed out waiting on password.\n");
     }
 
-    //printf("password: %s\n", password);
-    //fprintf(stdout,"\n");
     free(clientMsg);
     return password;
 }
 
 int currencyProgram(int clientfd)
 {
-    //printf("Called currencyProgram.\n");
-    //time_t timer = time(NULL);
     char* currency = NULL;
     char* password = NULL;
 
     for(;;)
     {
-        /*if(((int)(time(NULL)) - trigger % 5) == 0)
-        {
-            fprintf(stdout,"Timer-readPassword: %i ", (int)(time(NULL) - trigger));
-        }*/
         currency = readCurrency(clientfd);
         
         if(!currency)
@@ -315,7 +286,6 @@ int currencyProgram(int clientfd)
         }
     }
 
-    //fprintf(stdout,"\n");
     return 0;
 }
 
@@ -332,12 +302,9 @@ int main(int argc, char** argv)
     int len;
 
     int cliPort;
-
     
-    // Server needs to take an argument that specifies the port it is listening to.
     if (argc > 1)
     {
-        //first arg is just the name of the executable
         ++argv;
         removeNewLine(*argv);
         int test = atoi(*argv);
@@ -353,7 +320,6 @@ int main(int argc, char** argv)
     }
     else
     {
-        //no command-line arguments were provided, ask for port
         cliPort = getPortNumCli(); 
     }   
     
@@ -388,7 +354,6 @@ int main(int argc, char** argv)
             currencyProgram(clientfd);        
         }
  
-        //write(conntfd,"Server Timed Out.",64);
         close(clientfd);
         printf("Connection Closed. Waiting for new connection...\n");
     }
