@@ -23,6 +23,14 @@
 #define DEFAULT_MAX_PORT 59999
 #endif
 
+int readFromServer(int sockfd);
+
+int sendToServer(int sockfd, char* str);
+
+void removeNewLine(char* str);
+
+char* getInput();
+
 #endif
 
 
