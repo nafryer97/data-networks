@@ -9,3 +9,5 @@
 *.swp
 server
 client
+sender
+receiver
