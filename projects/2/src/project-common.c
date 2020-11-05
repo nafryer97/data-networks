@@ -89,3 +89,49 @@ char* getInput()
     
     return argument;
 }
+
+int parsePortNo(char* arg)
+{
+    int port = 0;
+    if ((port = atoi(args[0])) != 0)
+    {
+        if (port < DEFAULT_MIN_PORT || port > DEFAULT_MAX_PORT)
+        {
+            printf("Please use a port between %i and %i\n",DEFAULT_MIN_PORT, DEFAULT_MAX_PORT);
+            port = 0;
+        }
+    }
+    else
+    {
+        printf("Error converting port argument to integer.\n");
+    }
+
+    return port;
+}
+
+int setUpClientSocket(char* address, int port)
+{
+    printf("Attempting to open a client socket...\n");
+
+    int sockfd;
+    struct sockaddr_in sockaddress;
+
+    memset(&sockaddress,0,sizeof(struct sockaddr_in));
+ 
+    sockaddress.sin_family = AF_INET;
+    sockaddress.sin_port = htons(port);
+
+    sockaddress.sin_addr.s_addr = inet_addr(address);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (sockfd < 0)
+    {
+        perror("Socket Error.\n");
+    }
+    else
+    {
+        printf("Socket Opened.\n");
+    }
+    
+    return sockfd;
+}

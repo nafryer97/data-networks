@@ -1,43 +1,24 @@
 #include"fryerP2Sender.h"
 
-int setUp(char* address, int port)
+int clientLoop(int sockfd)
 {
-    int sockfd;
-    struct sockaddr_in sockaddress;
-
-    memset(&sockaddress,0,sizeof(struct sockaddr_in));
- 
-    sockaddress.sin_family = AF_INET;
-    sockaddress.sin_port = htons(port);
-
-    sockaddress.sin_addr.s_addr = inet_addr(address);
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (sockfd < 0)
-    {
-        perror("Socket Error.\n");
-        return EXIT_FAILURE;
-    }
-    else
-    {
-        printf("Socket Opened.\n");
-    }
-
-    for(;;)
+    printf("Sender attempting to contact relay server.\n");
+    for(int attempts = 0;attempts < 5;++attempts)
     {
         if (connect(sockfd, (struct sockaddr *) &sockaddress, sizeof(sockaddress)) < 0)
         {
-             perror("Connection Error.\n");
+             perror("Attempt %i of 5: connection error.\n", (attempts+1));
              sleep(2);
-             continue;
         }
         else
         {
-            printf("Connection Successful.\n");
+            printf("Attempt %i: connection successful.\n", (attempts+1));
+            close(sockfd);
+            return EXIT_SUCCESS;
         }
-
-        return EXIT_SUCCESS;
     }
+    
+    return EXIT_FAILURE;
 }
 
 int usage()
@@ -61,17 +42,9 @@ int main(int argc, char* argv[])
            {
                 case 'p':
                     args[0] = optarg;
-                    if ((port = atoi(args[0])) != 0)
+                    port = parsePortNo(args[0]);
+                    if (!port)
                     {
-                        if (port < DEFAULT_MIN_PORT || port > DEFAULT_MAX_PORT)
-                        {
-                            printf("Please use a port between %i and %i\n",DEFAULT_MIN_PORT, DEFAULT_MAX_PORT);
-                            return usage();
-                        }
-                    }
-                    else
-                    {
-                        printf("Error converting port argument to integer.\n");
                         return usage();
                     }
                     break;
@@ -98,7 +71,14 @@ int main(int argc, char* argv[])
 
     printf("Server: %s.\n", address);
     printf("Port: %i.\n", port);
-    char* test = getInput();
-    free(test);
-    return EXIT_SUCCESS;
+
+    int relayfd = 0;
+    if ((relayfd = setUpClientSocket(address,port)) < 0)
+    {
+        return EXIT_FAILURE;
+    }
+    else
+    {
+        return clientLoop(relayfd);        
+    }
 }

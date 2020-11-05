@@ -31,6 +31,10 @@ void removeNewLine(char* str);
 
 char* getInput();
 
+int parsePortNo(char* arg);
+
+int setUpClientSocket(char* address, int port);
+
 #endif
 
 
