@@ -1,24 +1,71 @@
 #include"fryerP2Sender.h"
 
-int clientLoop(int sockfd)
+int senderProgram(int sockfd)
 {
-    printf("Sender attempting to contact relay server.\n");
-    for(int attempts = 0;attempts < 5;++attempts)
+    char* input = NULL;
+    char* response = NULL;
+
+    printf("Enter \'x\' or \'q\' to quit.\n");
+    printf("Please enter a username:\n");
+
+    input = getInput();
+
+    while((strcmp("x", input) != 0) && (strcmp("q",input) != 0))
     {
-        if (connect(sockfd, (struct sockaddr *) &sockaddress, sizeof(sockaddress)) < 0)
+        sendToSocket(sockfd, input);
+        free(input);
+        input = NULL;
+
+        if((response = readFromSocket(sockfd)) != NULL)
         {
-             perror("Attempt %i of 5: connection error.\n", (attempts+1));
-             sleep(2);
+            printf("Response: %s\n", response);
+            free(response);
+            response = NULL;
+        }
+        
+        printf("Please enter a password:\n");
+        
+        input = getInput();
+
+        if((strcmp("x", input) != 0) && (strcmp("q",input) != 0))
+        {
+            sendToSocket(sockfd, input);
+            free(input);
+            input = NULL;
         }
         else
         {
-            printf("Attempt %i: connection successful.\n", (attempts+1));
-            close(sockfd);
+            free(input);
             return EXIT_SUCCESS;
         }
-    }
     
-    return EXIT_FAILURE;
+        if((response = readFromSocket(sockfd)) != NULL)
+        {
+            if (atoi(response) == 0)
+            {
+                printf("Welcome!\n");
+            }
+            else
+            {
+                printf("Incorrect username/password. Please try again.\n");
+            }
+
+            free(response);
+            response = NULL;
+        }
+
+        printf("Enter \'x\' or \'q\' to quit.\n");
+        printf("Please enter a username:\n");
+
+        input = getInput();
+    }
+
+    if(input != NULL)
+    {
+        free(input);
+    }
+
+    return EXIT_SUCCESS;
 }
 
 int usage()
@@ -32,7 +79,7 @@ int main(int argc, char* argv[])
     int port = 0;
     char* address;
     
-    if (argc > 1 && argc < 6)
+    if (argc > 2 && argc < 6)
     {
         char* args[2];
         int opt = 0;
@@ -72,13 +119,34 @@ int main(int argc, char* argv[])
     printf("Server: %s.\n", address);
     printf("Port: %i.\n", port);
 
-    int relayfd = 0;
-    if ((relayfd = setUpClientSocket(address,port)) < 0)
+    struct sockaddr_in cliaddress;
+    int sockfd;
+
+    if ((sockfd = createClientSocket(port, address, &sockfd, &cliaddress)) < 0)
     {
         return EXIT_FAILURE;
     }
-    else
+    
+    printf("Sender attempting to contact relay server.\n");
+    
+    for(int attempts = 0;attempts < 5;++attempts)
     {
-        return clientLoop(relayfd);        
+        if (connect(sockfd, (struct sockaddr*) &cliaddress, sizeof(cliaddress)) < 0)
+        {
+            char msg[64];
+            memset(msg,'\0',(sizeof(char)*64)); 
+            snprintf(msg,(sizeof(char)*64), "Attempt %i of 5: connection error.\n", (attempts+1));
+            perror(msg);
+            sleep(2);
+        }
+        else
+        {
+            printf("Attempt %i: connection successful.\n", (attempts+1));
+            senderProgram(sockfd);
+            close(sockfd);
+            return EXIT_SUCCESS;
+        }
     }
+    
+    return EXIT_FAILURE;
 }

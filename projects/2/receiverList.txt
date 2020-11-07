@@ -1,0 +1,7 @@
+Receiver Address
+gpel8.cs.ou.edu 129.15.78.11
+gpel9.cs.ou.edu 129.15.78.12
+gpel10.cs.ou.edu 129.15.78.13
+gpel11.cs.ou.edu 129.15.78.14
+gpel12.cs.ou.edu 129.15.78.15
+gpel13.cs.ou.edu 129.15.78.16

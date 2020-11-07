@@ -23,9 +23,9 @@
 #define DEFAULT_MAX_PORT 59999
 #endif
 
-int readFromServer(int sockfd);
+char* readFromSocket(int sockfd);
 
-int sendToServer(int sockfd, char* str);
+int sendToSocket(int sockfd, char* str);
 
 void removeNewLine(char* str);
 
@@ -33,7 +33,9 @@ char* getInput();
 
 int parsePortNo(char* arg);
 
-int setUpClientSocket(char* address, int port);
+int createClientSocket(int port, const char* address, int *sockfd, struct sockaddr_in *cliaddress);
+
+int createServerSocket(int port, struct sockaddr_in *serveraddr);
 
 #endif
 

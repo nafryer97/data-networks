@@ -1,9 +1,8 @@
 #include"project-common.h"
 
-int readFromServer(int sockfd)
+char* readFromSocket(int sockfd)
 {
     int nread = 0;
-    int errsv = 0;
 
     char* sbuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(sbuf, '\0', DEFAULT_BUFFER_SIZE);
@@ -13,30 +12,23 @@ int readFromServer(int sockfd)
             
         if (nread < 0)
         {
-            perror("Error receiving response from server.");
-            errsv = errno;
+            perror("Error receiving data from socket.\n");
             free(sbuf);
-            return errsv;
+            return NULL;
         }
 
     } while(nread == 0);
-    
-    if (nread > 0)
-    {
-        printf("From Server: %s\n", sbuf);
-    }
    
-    free(sbuf);
-    return 0;
+    return sbuf;
 }
 
-int sendToServer(int sockfd, char* str)
+int sendToSocket(int sockfd, char* str)
 {
     int errsv = 0;
     
     if (send(sockfd,str,(strlen(str)+1),0)<0)
     {
-        perror("Error sending input to server.");
+        perror("Error sending message to socket.");
         errsv = errno;
         return errsv;
     }
@@ -50,14 +42,12 @@ void removeNewLine(char* str)
     int len = strlen(str);
     for(int i = 0; i <= len; ++i)
     {
-        if(*nl == '\n' && i == len)
+        if(*nl == '\n')
         {
             *nl = '\0';
         }
-        else if(*nl == '\n' && i < len)
-        {
-            *nl = ' ';
-        }
+
+        ++nl;
     }
 }
 
@@ -67,8 +57,6 @@ char* getInput()
     memset(inputBuf, '\0', (sizeof(char) * DEFAULT_BUFFER_SIZE));
 
     char* argument = NULL;
-        
-    printf("Enter some input below:\n");
         
     while(argument == NULL)
     {
@@ -93,7 +81,7 @@ char* getInput()
 int parsePortNo(char* arg)
 {
     int port = 0;
-    if ((port = atoi(args[0])) != 0)
+    if ((port = atoi(arg)) != 0)
     {
         if (port < DEFAULT_MIN_PORT || port > DEFAULT_MAX_PORT)
         {
@@ -109,22 +97,19 @@ int parsePortNo(char* arg)
     return port;
 }
 
-int setUpClientSocket(char* address, int port)
+int createClientSocket(int port, const char* address, int *sockfd, struct sockaddr_in *cliaddress)
 {
     printf("Attempting to open a client socket...\n");
 
-    int sockfd;
-    struct sockaddr_in sockaddress;
-
-    memset(&sockaddress,0,sizeof(struct sockaddr_in));
+    memset(cliaddress,0,sizeof(struct sockaddr_in));
  
-    sockaddress.sin_family = AF_INET;
-    sockaddress.sin_port = htons(port);
+    (*cliaddress).sin_family = AF_INET;
+    (*cliaddress).sin_port = htons(port);
 
-    sockaddress.sin_addr.s_addr = inet_addr(address);
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    (*cliaddress).sin_addr.s_addr = inet_addr(address);
+    *sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    if (sockfd < 0)
+    if (*sockfd < 0)
     {
         perror("Socket Error.\n");
     }
@@ -132,6 +117,38 @@ int setUpClientSocket(char* address, int port)
     {
         printf("Socket Opened.\n");
     }
-    
-    return sockfd;
+
+    return *sockfd;
+}
+
+int createServerSocket(int port, struct sockaddr_in *serveraddr)
+{
+    int sockfd = socket(AF_INET,SOCK_STREAM,0);
+
+    if (sockfd<0)
+    {
+        perror("Error in socket.\n");
+        return -1;
+    }
+    else
+    {
+        printf("Socket Opened.\n");
+    }   
+
+    memset(serveraddr, 0, sizeof(struct sockaddr_in));
+
+    (*serveraddr).sin_port=htons(port);
+    (*serveraddr).sin_addr.s_addr=htonl(0);
+
+    if (bind(sockfd, (struct sockaddr*) serveraddr, sizeof(struct sockaddr_in))<0)
+    {
+        perror("Error in binding.\n");
+        close(sockfd);
+        return -1;
+    }
+    else
+    {
+        printf("Bound Successfully.\n");
+        return sockfd;
+    }
 }
