@@ -89,6 +89,7 @@ int sendMessages(int serverfd)
     {
         if (strcmp(input, "CLOSE") == 0)
         {
+            sendToSocket(serverfd, input);
             status = 0;
         }
 
