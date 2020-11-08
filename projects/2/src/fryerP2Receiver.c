@@ -20,9 +20,9 @@ int hamming(int sockfd, char *arg1, char *arg2)
         ++ptr2;
     }
 
-    char result[64] = "";
+    char result[DEFAULT_BUFFER_SIZE] = "";
 
-    snprintf(result,64,"%i",count);
+    snprintf(result,DEFAULT_BUFFER_SIZE,"Hamming Distance for %s and %s: %i",arg1,arg2,count);
 
     if(sendToSocket(sockfd, result) < 0)
     {
@@ -47,7 +47,7 @@ int getMessages(int sockfd)
 
     if(strcmp(msg1, "CLOSE") == 0)
     {
-        printf("Received close message. Exiting...\n");
+        printf("Received close message.\n");
         status = 0;
         free(msg1);
         return status;
@@ -64,7 +64,7 @@ int getMessages(int sockfd)
     }
     if(strcmp(msg1, "CLOSE") == 0)
     {
-        printf("Received close message. Exiting...\n");
+        printf("Received close message.\n");
         status = 0;
         free(msg1);
         free(msg2);
@@ -110,6 +110,8 @@ int serverLoop(int sockfd)
     }
 
     close(sockfd);
+
+    printf("Exiting with status %i",status);
 
     return EXIT_SUCCESS;
 }

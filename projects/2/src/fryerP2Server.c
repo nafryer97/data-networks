@@ -163,6 +163,7 @@ int relayMessages(int senderfd, int receiverfd)
     {
         if (strcmp(cliMsg, "CLOSE") == 0)
         {
+            printf("Sending close message to receiver.\n");
             sendToSocket(receiverfd, cliMsg);
             status = 0;
         }

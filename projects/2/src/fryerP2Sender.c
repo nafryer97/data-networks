@@ -26,16 +26,14 @@ int sendMessages(int serverfd)
 
     char *msg = malloc(sizeof(char)*DEFAULT_BUFFER_SIZE);
     char *input = NULL;
-    size_t msgLen = 0;
     int numSent = 1;
     input = getInput();
 
     while(strcmp(input, "CLOSE") != 0)
     {
         memset(msg, '\0', (sizeof(char)*DEFAULT_BUFFER_SIZE));
-        msgLen = strlen(input);
         
-        if(snprintf(msg, DEFAULT_BUFFER_SIZE, "%i %s", ((int)msgLen), input)<0)
+        if(snprintf(msg, DEFAULT_BUFFER_SIZE, "%s",input)<0)
         {
             fprintf(stderr, "Error formatting message string.\n");
             break;
