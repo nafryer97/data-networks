@@ -99,7 +99,7 @@ int parsePortNo(char* arg)
 
 int createClientSocket(int port, const char* address, int *sockfd, struct sockaddr_in *cliaddress)
 {
-    printf("Attempting to open a client socket...\n");
+    printf("Attempting to open a client socket for address %s and port %i...\n", address,port);
 
     memset(cliaddress,0,sizeof(struct sockaddr_in));
  

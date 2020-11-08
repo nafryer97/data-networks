@@ -35,11 +35,25 @@ struct users userPairs;
 
 struct servers serverPairs;
 
+int initializeServers();
+
 int initalizeUsers();
+
+int relayMessages(int senderfd, int receiverfd);
+
+int connectToReceiver(int serverno, int recvPort, int *recvfd, struct sockaddr_in *recvAddress);
+
+int matchReceivers(char *arg);
 
 int matchCredentials(char *arg1, char *arg2);
 
-int serverLoop(int sockfd);
+int getReceiver(int senderfd, int port, int *recvPort, int *serverno);
+
+int authenticate(int senderfd);
+
+int serverProgram(int sockfd, int port);
+
+int serverLoop(int sockfd, int port);
 
 int usage(char *str);
 
