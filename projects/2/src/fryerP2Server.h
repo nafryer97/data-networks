@@ -6,7 +6,7 @@
 #define USER_LIST "userList.txt"
 #define RECEIVER_LIST "receiverList.txt"
 #define NUM_USERS 6
-#define NUM_SERVERS 6
+#define NUM_SERVERS 7
 #define MAX_NAME_LENGTH 64
 
 struct userInfo
