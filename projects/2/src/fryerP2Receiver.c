@@ -15,7 +15,7 @@ int hamming(int sockfd, char *arg1, char *arg2)
         {
             ++count;
         }
-
+        printf("%c %c %i |",(*ptr1),(*ptr2),count);
         ++ptr1;
         ++ptr2;
     }
@@ -73,7 +73,12 @@ int getMessages(int sockfd)
 
     printf("Message 2: %s\n",msg2);
     
-    return hamming(sockfd, msg1, msg2);
+    status = hamming(sockfd, msg1, msg2);
+
+    free(msg1);
+    free(msg2);
+
+    return status;
 }
 
 int serverLoop(int sockfd)
@@ -83,32 +88,27 @@ int serverLoop(int sockfd)
     struct sockaddr_in cliaddr;
     socklen_t clientlen = sizeof(struct sockaddr_in);
     
-    for(;;)
+    memset(&cliaddr, 0, sizeof(struct sockaddr_in));
+        
+    printf("Waiting for connection...\n");
+        
+    int relayfd = accept(sockfd, (struct sockaddr*) &cliaddr, &clientlen);
+
+    if (relayfd < 0)
     {
-        memset(&cliaddr, 0, sizeof(struct sockaddr_in));
-        
-        printf("Waiting for connection...\n");
-        
-        int senderfd = accept(sockfd, (struct sockaddr*) &cliaddr, &clientlen);
-
-        if (senderfd < 0)
-        {
-            perror("Error accepting connection.\n");
-        }
-        else
-        {
-            printf("Accepted.\n");
-            while(status == 1)
-            {
-                status = getMessages(senderfd);
-            }
-        }
-
-        close(senderfd);
-        printf("Connection Closed.\n");
-        break;
+        perror("Error accepting connection.\n");
     }
-
+    else
+    {
+        printf("Accepted. Connected to relay server.\n");
+        while(status == 1)
+        {
+            status = getMessages(relayfd);
+        }
+        close(relayfd);
+        printf("Connection Closed.\n");
+    }
+    
     close(sockfd);
 
     printf("Exiting with status %i",status);
@@ -118,7 +118,7 @@ int serverLoop(int sockfd)
 
 int usage(char* str)
 {
-    fprintf(stderr, "Usage: %s -p port_number\n",str);
+    fprintf(stderr, "Usage: %s [-p port number]\n",str);
     return EXIT_SUCCESS;
 }
 
@@ -156,8 +156,6 @@ int main(int argc, char* argv[])
     {
         return usage(argv[0]);
     }
-
-    printf("Port: %i.\n", port);
 
     struct sockaddr_in serveraddr;
     int sockfd = 0;

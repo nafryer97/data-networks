@@ -1,7 +1,9 @@
 #ifndef RECEIVER_H
 #define RECEIVER_H
 
-#include"project-common.h"
+#include"fryerP2Common.h"
+
+int hamming(int sockfd, char *arg1, char *arg2);
 
 int serverLoop(int sockfd);
 

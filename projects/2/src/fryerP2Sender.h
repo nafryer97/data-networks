@@ -1,7 +1,7 @@
 #ifndef SENDER_H
 #define SENDER_H
 
-#include"project-common.h"
+#include"fryerP2Common.h"
 
 int sendMessages(int serverfd);
 

@@ -1,5 +1,5 @@
-#ifndef PROJECT_COMMON_H
-#define PROJECT_COMMON_H
+#ifndef FRYERP2_COMMON_H
+#define FRYERP2_COMMON_H
 
 #include<stdio.h>
 #include<unistd.h>
@@ -38,5 +38,3 @@ int createClientSocket(int port, const char* address, int *sockfd, struct sockad
 int createServerSocket(int port, struct sockaddr_in *serveraddr);
 
 #endif
-
-

@@ -108,10 +108,11 @@ int initializeUsers()
 
 int relayMessages(int senderfd, int receiverfd)
 {
+    printf("Relaying messages...\n");
+
     int status = -1;
     int numSent = 1;
     char *cliMsg = NULL;
-    char *recvResponse = NULL;
 
     if((cliMsg = readFromSocket(senderfd)) == NULL)
     {
@@ -120,11 +121,15 @@ int relayMessages(int senderfd, int receiverfd)
 
     while(strcmp(cliMsg, "CLOSE") != 0)
     {
+        printf("Received from sender: %s\nSending echo acknowledgement...\n", cliMsg);
+        
         if(sendToSocket(senderfd, cliMsg) != 0)
         {
             status = -1;
             break;
         }
+
+        printf("Forwarding to receiver.\n");
 
         if(sendToSocket(receiverfd, cliMsg) != 0)
         {
@@ -134,24 +139,38 @@ int relayMessages(int senderfd, int receiverfd)
 
         if((numSent % 2) == 0)
         {
-            if((recvResponse = readFromSocket(receiverfd)) == NULL)
+            printf("Expecting a message from receiver...\n");
+            
+            char *recvResponse = NULL;
+            
+            if((recvResponse = readFromSocket(receiverfd)) != NULL)
+            {
+                printf("Message from receiver: %s\nForwarding to sender.\n",recvResponse);
+                
+                if(sendToSocket(senderfd, recvResponse) != 0)
+                {
+                    status = -1;
+                    free(recvResponse);
+                    break;
+                }
+                
+                free(recvResponse);
+            }
+            else
             {
                 status = -1;
                 break;
             }
-            if(sendToSocket(senderfd, recvResponse) != 0)
-            {
-                status = -1;
-                break;
-            }
+            
         }
 
         free(cliMsg);
         cliMsg = NULL;
-        free(recvResponse);
-        recvResponse = NULL;
 
         ++numSent;
+        
+        printf("Waiting for next message from sender...\n");
+
         if((cliMsg = readFromSocket(senderfd)) == NULL)
         {
             status = -1;
@@ -168,10 +187,6 @@ int relayMessages(int senderfd, int receiverfd)
             status = 0;
         }
         free(cliMsg);
-    }
-    if(recvResponse != NULL)
-    {
-        free(recvResponse);
     }
 
     return status;
@@ -352,15 +367,7 @@ int serverProgram(int senderfd, int port)
     int recvPort = 0;
     int recvServer = -1;
     
-    if(initializeUsers()<0)
-    {
-        return status;
-    }
     if((status = authenticate(senderfd)) < 0)
-    {
-        return status;
-    }
-    if(initializeServers() < 0)
     {
         return status;
     }
@@ -377,10 +384,7 @@ int serverProgram(int senderfd, int port)
     {
         sendToSocket(senderfd, "0");
 
-        if((status = relayMessages(senderfd, recvfd)) < 0)
-        {
-            status = -1;
-        }
+        status = relayMessages(senderfd, recvfd);
 
         close(recvfd);
     }
@@ -392,7 +396,16 @@ int serverLoop(int sockfd, int port)
 {
     struct sockaddr_in cliaddr;
     socklen_t clientlen = sizeof(struct sockaddr_in);
-    
+   
+    if(initializeUsers() <0)
+    {
+        return EXIT_FAILURE;
+    }
+    if(initializeServers()<0)
+    {
+        return EXIT_FAILURE;
+    }
+
     for(;;)
     {
         memset(&cliaddr, 0, sizeof(struct sockaddr_in));

@@ -1,7 +1,7 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#include"project-common.h"
+#include"fryerP2Common.h"
 
 #define USER_LIST "userList.txt"
 #define RECEIVER_LIST "receiverList.txt"

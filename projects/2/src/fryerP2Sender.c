@@ -2,52 +2,26 @@
 
 int sendMessages(int serverfd)
 {
-    int status = -1;
-    char *response = NULL;
-    if((response = readFromSocket(serverfd)) != NULL)
-    {
-        printf("Response: %s\n", response);
-        if (atoi(response) == 0)
-        {
-            printf("Relay connected to receiver.\n");
-        }
-        else
-        {
-            printf("Relay could not connect to receiver.\n");
-            free(response);
-            return status;
-        }
-    }
-
-    free(response);
-    response = NULL;
-
     printf("Please enter a message to send to the receiver, or \"CLOSE\" to close the connection.\n");
-
-    char *msg = malloc(sizeof(char)*DEFAULT_BUFFER_SIZE);
-    char *input = NULL;
+    
+    int status = -1;
     int numSent = 1;
+    char *response = NULL;
+    char *input = NULL;
+
     input = getInput();
 
     while(strcmp(input, "CLOSE") != 0)
     {
-        memset(msg, '\0', (sizeof(char)*DEFAULT_BUFFER_SIZE));
-        
-        if(snprintf(msg, DEFAULT_BUFFER_SIZE, "%s",input)<0)
+        if(sendToSocket(serverfd, input) != 0)
         {
-            fprintf(stderr, "Error formatting message string.\n");
-            break;
-        }
-
-        if(sendToSocket(serverfd, msg) != 0)
-        {
-            fprintf(stderr, "Error sending message to relay server.\n");
+            fprintf(stderr, "Error sending message to relay.\n");
             break;
         }
 
         if((response = readFromSocket(serverfd)) != NULL)
         {
-            printf("Response: %s\n", response);
+            printf("Response from relay: %s\n", response);
             free(response);
             response = NULL;
         }
@@ -77,11 +51,12 @@ int sendMessages(int serverfd)
         input = NULL;
 
         ++numSent;
+        
         printf("Please enter a message to send to the receiver, or \"CLOSE\" to close the connection.\n");
+        
         input = getInput();
     }
 
-    free(msg);
 
     if(input != NULL)
     {
@@ -140,13 +115,27 @@ int contactReceiver(int sockfd)
     
         if((response = readFromSocket(sockfd)) != NULL)
         {
+            printf("Response: %s\n", response);
             if (atoi(response) == 0)
             {
                 printf("Relay accepted server info. Waiting for connection...\n");
                 free(response);
-                response = NULL;
-                status = 1;
-                break;
+                
+                if((response = readFromSocket(sockfd)) != NULL)
+                {
+                    printf("Response: %s\n", response);
+                    if (atoi(response) == 0)
+                    {
+                        printf("Relay connected to receiver.\n");
+                        status = 1;
+                        free(response);
+                        break;
+                    }
+                    else
+                    {
+                        printf("Relay could not connect to receiver.\n");
+                    }
+                }
             }
             else
             {
@@ -223,9 +212,8 @@ int authenticate(int sockfd)
             {
                 printf("Welcome!\n");
                 free(response);
-                response = NULL;
                 status = 1;
-                return status;
+                break;
             }
             else
             {
