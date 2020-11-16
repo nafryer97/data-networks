@@ -31,14 +31,7 @@ char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *soc
     
     if((n = recvfrom(sockfd,sbuf,(DEFAULT_BUFFER_SIZE-1),0,(struct sockaddr *)sockaddr,sock_len)) < 0)
     {
-        if(errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            //perror("No data at socket.\n");
-        }
-        else
-        {
-            perror("Error receiving data from socket.\n");
-        }
+        perror("Error receiving data from socket.\n");
             
         free(sbuf);
         return NULL;
@@ -65,7 +58,7 @@ int sendToUDPSocket(int sockfd, char* str, struct sockaddr_in *dest)
 {
     int errsv = 0;
     
-    if (sendto(sockfd,str,(strlen(str)+1),MSG_CONFIRM, (struct sockaddr *) dest,sizeof(*dest))<0)
+    if (sendto(sockfd,str,(strlen(str)+1),MSG_CONFIRM,(struct sockaddr *) dest,sizeof(struct sockaddr_in))<0)
     {
         perror("Error sending message to socket.");
         errsv = errno;
@@ -74,6 +67,7 @@ int sendToUDPSocket(int sockfd, char* str, struct sockaddr_in *dest)
 
     return 0;
 }
+
 void removeNewLine(char* str)
 {
     char* nl = str;
@@ -171,8 +165,12 @@ int createUDPClientSocket(int port, const char* address, int *sockfd, struct soc
  
     (*cliaddress).sin_family = AF_INET;
     (*cliaddress).sin_port=htons(port);
-    (*cliaddress).sin_addr.s_addr = inet_addr(address);
-    *sockfd = socket(AF_INET, SOCK_DGRAM|SOCK_NONBLOCK, 0);
+    if(inet_aton(address,&(*cliaddress).sin_addr)==0)
+    {
+        fprintf(stderr, "Error creating byte address from supplied address: %s\n",address);
+    }
+
+    *sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
     if (*sockfd < 0)
     {
@@ -206,7 +204,7 @@ int createTCPServerSocket(int port, struct sockaddr_in *serveraddr)
 
     (*serveraddr).sin_family = AF_INET;
     (*serveraddr).sin_port=htons(port);
-    (*serveraddr).sin_addr.s_addr=INADDR_ANY;
+    (*serveraddr).sin_addr.s_addr = INADDR_ANY;
 
     if (bind(sockfd, (struct sockaddr*) serveraddr, sizeof(struct sockaddr_in))<0)
     {
@@ -225,7 +223,7 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
 {
     printf("Attempting to open a UDP server socket for port %i...\n",port);
 
-    int sockfd = socket(AF_INET,SOCK_DGRAM|SOCK_NONBLOCK,0);
+    int sockfd = socket(AF_INET,SOCK_DGRAM,0);
     
     if (sockfd<0)
     {
@@ -241,7 +239,7 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
 
     (*serveraddr).sin_family = AF_INET;
     (*serveraddr).sin_port=htons(port);
-    (*serveraddr).sin_addr.s_addr=INADDR_ANY;
+    (*serveraddr).sin_addr.s_addr = INADDR_ANY;
 
     if(bind(sockfd, (struct sockaddr*) serveraddr, sizeof(struct sockaddr_in)) < 0)
     {

@@ -5,18 +5,18 @@ int compareAddresses(struct sockaddr_in *addr1, struct sockaddr_in *addr2)
     int errcode = 0;
     char host1[NI_MAXHOST];
     
-    if((errcode = getnameinfo((struct sockaddr *) addr1,sizeof(*addr1),host1,NI_MAXHOST,NULL,0,NI_DGRAM|NI_NUMERICHOST))<0)
+    if((errcode = getnameinfo((struct sockaddr *) addr1,sizeof(struct sockaddr_in),host1,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
     {
         fprintf(stderr, "Error getting host1 info: %s\n", gai_strerror(errcode));
-        return -1;
+        return -2;
     }
 
     char host2[NI_MAXHOST];
     
-    if((errcode = getnameinfo(((struct sockaddr *)addr2),sizeof((*addr2)),host2,NI_MAXHOST,NULL,0,NI_DGRAM|NI_NUMERICHOST))<0)
+    if((errcode = getnameinfo(((struct sockaddr *)addr2),sizeof(struct sockaddr_in),host2,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
     {
         fprintf(stderr, "Error getting host2 info: %s\n", gai_strerror(errcode));
-        return -1;
+        return -2;
     }   
     
     printf("Comparing hosts: %s %s\n",host1,host2);
@@ -24,16 +24,16 @@ int compareAddresses(struct sockaddr_in *addr1, struct sockaddr_in *addr2)
     if (strcmp(host1, host2) == 0)
     {
         printf("Found a match: %s %s\n",host1,host2);
-        return 1;
+        return 0;
     }
     
     
-    return 0;
+    return -1;
 }
 
 int checkAddresses(struct group_info *info, struct sockaddr_in *addr)
 {
-    int result = 0;
+    int result = -1;
     for(int i = 0; i < (*info).group_size; ++i)
     {
         if((*info).flags[i]==0)
@@ -42,13 +42,20 @@ int checkAddresses(struct group_info *info, struct sockaddr_in *addr)
         }
         else
         {
-            if((result = compareAddresses(addr, (*info).client_addresses[i])) == 1)
+            if((result = compareAddresses(addr, (*info).client_addresses[i])) == 0)
             {
+                //found a match
                 return i;
             }
             else if (result == -1)
             {
-                return -1;
+                //no matches found
+                continue;
+            }
+            else if (result == -2)
+            {
+                //error occurred
+                return result;
             }
         }
     }
@@ -70,11 +77,29 @@ int addToGroup(struct group_info *info, struct sockaddr_in *new_addr)
 
         if (compare > -1)
         {
+            //match found
             printf("%s\n", ERR_CLIENT_EXISTS);
             sendToUDPSocket((*info).serverfd,ERR_CLIENT_EXISTS,new_addr);
         }
-        else
+        else if (compare == -1)
         {
+            //no matches found
+            for(int i = 0; i < (*info).group_size; ++i)
+            {
+                if((*info).flags[i] == 0)
+                {
+                    memcpy((*info).client_addresses[i],new_addr,sizeof((*new_addr)));
+                    ++(*info).num_clients;
+                    (*info).flags[i] = 1;
+                    printf("%s\n", CLIENT_CONFIRM);
+                    sendToUDPSocket((*info).serverfd,CLIENT_CONFIRM,new_addr);
+                    return 0;
+                }
+            }
+        }
+        else if (compare == -2)
+        {
+            //error occurred
             for(int i = 0; i < (*info).group_size; ++i)
             {
                 if((*info).flags[i] == 0)
@@ -99,6 +124,7 @@ int removeFromGroup(struct group_info *info, struct sockaddr_in *client_addr)
 
     if(compare < 0)
     {
+        //no matches found
         sendToUDPSocket((*info).serverfd,ERR_CLIENT_NO_EXIST,client_addr);
         return 1;
     }
@@ -123,17 +149,9 @@ void printGroupInfo(struct group_info *info)
 {
     printf("Begin Debug Info\n");
 
-    int errcode = 0;
-    char host2[NI_MAXHOST];
-    
     for(int i = 0; i < (*info).group_size; ++i)
     {
-        if((errcode = getnameinfo(((struct sockaddr *)((*info).client_addresses[i])),sizeof((*(*info).client_addresses[i])),host2,NI_MAXHOST,NULL,0,NI_DGRAM|NI_NUMERICHOST))<0)
-        {
-            fprintf(stderr, "Error getting host info: %s\n", gai_strerror(errcode));
-        }
-
-        printf("Host info at %i: %s\n",i,host2);
+        printf("Host info at %i: %s\n",i,inet_ntoa((*(*info).client_addresses[i]).sin_addr));
     }
 
     printf("Group name: %s\n",(*info).group_name);
@@ -173,7 +191,7 @@ void *listenToServerSocket(void *info_ptr)
     const int serverfd = (*info).serverfd;
     const struct sockaddr_in *serveraddr = (*info).server_addr;
     struct sockaddr_in *client_addr = malloc(sizeof(struct sockaddr_in));
-    socklen_t socklen;
+    socklen_t socklen = sizeof(struct sockaddr_in);
     char *climsg;
     
     for (;;)
@@ -188,6 +206,14 @@ void *listenToServerSocket(void *info_ptr)
         {
             if (strcmp(climsg, "JOIN") == 0)
             {
+                int errcode = 0;
+                char host[NI_MAXHOST];
+    
+                if((errcode = getnameinfo((struct sockaddr *) client_addr,sizeof(struct sockaddr_in),host,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
+                {
+                    fprintf(stderr, "Error getting client info: %s\n", gai_strerror(errcode));
+                }
+
                 addToGroup(info, client_addr);
             }
             else if (strcmp(climsg, "QUIT") == 0)
