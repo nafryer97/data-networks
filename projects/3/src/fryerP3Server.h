@@ -1,7 +1,6 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#include<pthread.h>
 #include"fryerP3Common.h"
 
 #ifndef MAX_GROUP_SIZE

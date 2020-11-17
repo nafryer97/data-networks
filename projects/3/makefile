@@ -20,7 +20,7 @@ server : $(OBJDIR)/fryerP3Common.o $(OBJDIR)/fryerP3Server.o
 	$(CC) -pthread -o $@ $^
 
 client : $(OBJDIR)/fryerP3Common.o $(OBJDIR)/fryerP3Client.o
-	$(CC) -o $@ $^
+	$(CC) -pthread -o $@ $^
 
 $(OBJS) : | $(OBJDIR)
 

@@ -2,25 +2,12 @@
 
 int compareAddresses(struct sockaddr_in *addr1, struct sockaddr_in *addr2)
 {
-    int errcode = 0;
     char host1[NI_MAXHOST];
-    
-    if((errcode = getnameinfo((struct sockaddr *) addr1,sizeof(struct sockaddr_in),host1,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
-    {
-        fprintf(stderr, "Error getting host1 info: %s\n", gai_strerror(errcode));
-        return -2;
-    }
-
     char host2[NI_MAXHOST];
     
-    if((errcode = getnameinfo(((struct sockaddr *)addr2),sizeof(struct sockaddr_in),host2,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
-    {
-        fprintf(stderr, "Error getting host2 info: %s\n", gai_strerror(errcode));
-        return -2;
-    }   
-    
-    printf("Comparing hosts: %s %s\n",host1,host2);
-    
+    strncpy(host1, inet_ntoa((*addr1).sin_addr), NI_MAXHOST);
+    strncpy(host2, inet_ntoa((*addr2).sin_addr), NI_MAXHOST);
+
     if (strcmp(host1, host2) == 0)
     {
         printf("Found a match: %s %s\n",host1,host2);
@@ -47,16 +34,6 @@ int checkAddresses(struct group_info *info, struct sockaddr_in *addr)
                 //found a match
                 return i;
             }
-            else if (result == -1)
-            {
-                //no matches found
-                continue;
-            }
-            else if (result == -2)
-            {
-                //error occurred
-                return result;
-            }
         }
     }
 
@@ -69,7 +46,6 @@ int addToGroup(struct group_info *info, struct sockaddr_in *new_addr)
     if((*info).num_clients >= (*info).group_size)
     {
         printf("%s\n", ERR_MAX_CLIENTS);
-        sendToUDPSocket((*info).serverfd,ERR_MAX_CLIENTS,new_addr);
     }
     else
     {
@@ -79,36 +55,19 @@ int addToGroup(struct group_info *info, struct sockaddr_in *new_addr)
         {
             //match found
             printf("%s\n", ERR_CLIENT_EXISTS);
-            sendToUDPSocket((*info).serverfd,ERR_CLIENT_EXISTS,new_addr);
+            return -1;
         }
-        else if (compare == -1)
+        else
         {
             //no matches found
             for(int i = 0; i < (*info).group_size; ++i)
             {
                 if((*info).flags[i] == 0)
                 {
-                    memcpy((*info).client_addresses[i],new_addr,sizeof((*new_addr)));
+                    memcpy((*info).client_addresses[i],new_addr,sizeof(struct sockaddr_in));
                     ++(*info).num_clients;
                     (*info).flags[i] = 1;
                     printf("%s\n", CLIENT_CONFIRM);
-                    sendToUDPSocket((*info).serverfd,CLIENT_CONFIRM,new_addr);
-                    return 0;
-                }
-            }
-        }
-        else if (compare == -2)
-        {
-            //error occurred
-            for(int i = 0; i < (*info).group_size; ++i)
-            {
-                if((*info).flags[i] == 0)
-                {
-                    memcpy((*info).client_addresses[i],new_addr,sizeof((*new_addr)));
-                    ++(*info).num_clients;
-                    (*info).flags[i] = 1;
-                    printf("%s\n", CLIENT_CONFIRM);
-                    sendToUDPSocket((*info).serverfd,CLIENT_CONFIRM,new_addr);
                     return 0;
                 }
             }
@@ -125,15 +84,13 @@ int removeFromGroup(struct group_info *info, struct sockaddr_in *client_addr)
     if(compare < 0)
     {
         //no matches found
-        sendToUDPSocket((*info).serverfd,ERR_CLIENT_NO_EXIST,client_addr);
         return 1;
     }
     else
     {
-        memset((*info).client_addresses[compare], 0, sizeof((*(*info).client_addresses[compare])));
+        memset((*info).client_addresses[compare], 0, sizeof(struct sockaddr_in));
         --(*info).num_clients;
         (*info).flags[compare] = 0;
-        sendToUDPSocket((*info).serverfd,CLIENT_REMOVED,client_addr);
     }
 
     return 0;
@@ -206,19 +163,30 @@ void *listenToServerSocket(void *info_ptr)
         {
             if (strcmp(climsg, "JOIN") == 0)
             {
-                int errcode = 0;
-                char host[NI_MAXHOST];
-    
-                if((errcode = getnameinfo((struct sockaddr *) client_addr,sizeof(struct sockaddr_in),host,NI_MAXHOST,NULL,0,NI_NUMERICHOST))<0)
+                int result = 0;
+                if((result = addToGroup(info, client_addr))==0)
                 {
-                    fprintf(stderr, "Error getting client info: %s\n", gai_strerror(errcode));
+                    sendToUDPSocket(serverfd,CLIENT_CONFIRM,client_addr);
                 }
-
-                addToGroup(info, client_addr);
+                else if (result == 1)
+                {
+                    sendToUDPSocket(serverfd,ERR_MAX_CLIENTS,client_addr);
+                }
+                else if (result == -1)
+                {
+                    sendToUDPSocket(serverfd,ERR_CLIENT_EXISTS,client_addr);
+                }
             }
             else if (strcmp(climsg, "QUIT") == 0)
             {
-                removeFromGroup(info, client_addr);
+                if(removeFromGroup(info, client_addr) == 0)
+                {
+                    sendToUDPSocket(serverfd,CLIENT_REMOVED,client_addr);
+                }
+                else
+                {
+                    sendToUDPSocket(serverfd,ERR_CLIENT_NO_EXIST,client_addr);
+                }
             }
             else
             {

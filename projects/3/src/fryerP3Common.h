@@ -11,6 +11,7 @@
 #include<arpa/inet.h>
 #include<errno.h>
 #include<netdb.h>
+#include<pthread.h>
 
 #ifndef DEFAULT_BUFFER_SIZE
 #define DEFAULT_BUFFER_SIZE 1024
