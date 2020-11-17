@@ -96,8 +96,15 @@ int removeFromGroup(struct group_info *info, struct sockaddr_in *client_addr)
     return 0;
 }
 
-int broadCast()
+int broadCast(struct group_info *info, char *msg)
 {
+    for (int i = 0; i < (*info).group_size; ++i)
+    {
+        if((*info).flags[i] == 1)
+        {
+            sendToUDPSocket((*info).serverfd,msg,(*info).client_addresses[i]);
+        }
+    }
     return 0;
 }
 
@@ -224,6 +231,17 @@ int messageLoop(struct group_info *info)
 
             if(strcmp("CLEARALL",input) == 0)
             {
+                broadCast(info, MSG_CLEARALL);
+                for (int i = 0; i < (*info).group_size; ++i)
+                {
+                    if ((*info).flags[i] == 1)
+                    {
+                        if(removeFromGroup(info, (*info).client_addresses[i]) != 0)
+                        {
+                            fprintf(stderr, "Error removing client at %i\n",i);
+                        }       
+                    }
+                }
                 free(input);
                 break;
             }
@@ -231,8 +249,12 @@ int messageLoop(struct group_info *info)
             {
                 printGroupInfo(info);
             }
+            else
+            {
+                broadCast(info,input);
+                printf("Sending message :%s to all clients in group.\n",input);
+            }
 
-            printf("Sending message :%s to all clients in group.\n",input);
             free(input);
         }
 
