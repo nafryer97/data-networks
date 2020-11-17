@@ -7,28 +7,34 @@ void *waitForMessage(void *info_ptr)
     const struct server_info *server_ptr = (struct server_info *)info_ptr;
     const struct sockaddr_in serveraddr = (*(*server_ptr).serveraddr);
     const int serverfd = (*server_ptr).serverfd;
+    char *serverMsg = NULL;
+    
     for(;;)
     {
-        char *serverMsg = NULL;
-        
         if((serverMsg = readFromUDPSocket(serverfd,0,NULL)) != NULL)
         {
             printf("Message from server: %s\n", serverMsg);
             if (strcmp(serverMsg, MSG_CLEARALL) == 0)
             {
                 printf("Message thread is returning.\n");
-                free(serverMsg);
-                pthread_exit(NULL);
+                break;
             }
             else if (strcmp(serverMsg, CLIENT_REMOVED) == 0)
             {
                 printf("Message thread is returning.\n");
-                free(serverMsg);
-                pthread_exit(NULL);
+                break;
             }
             free(serverMsg);
+            serverMsg=NULL;
         }
     }
+    
+    if (serverMsg != NULL)
+    {
+        free(serverMsg);
+    }
+
+    return NULL;
 }
 
 int clientProgram(int sockfd, struct sockaddr_in serveraddr, char *group_name)
