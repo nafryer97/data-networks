@@ -2,53 +2,42 @@
 
 int setup(struct user_list *users)
 {
-    printf("Retrieving server info...\n");
+    printf("Retrieving user info...\n");
 
-    char name[MAX_NAME_LENGTH] = "";
-    char address[MAX_NAME_LENGTH] = "";
+    FILE *userFile;
 
-    FILE *receiverlist;
-    if ((receiverlist = fopen(RECEIVER_LIST,"r")) == NULL)
+    if ((userFile = fopen(USER_LIST,"r")) == NULL)
     {
         perror("Error opening receiver list file.\n");
         return -1;
     }
 
-    //first line is header
-    if(fscanf(receiverlist,"%s %s",name,address) < 2)
-    {
-        fprintf(stderr, "Matched less than two string sequences from header of user list file.\n");
-        return -1;
-    }
-
-    memset(&name, '\0', (sizeof(char)*MAX_NAME_LENGTH));
-    memset(&address, '\0', (sizeof(char)*MAX_NAME_LENGTH));
-
     int i = 0;
+
+    char name[SMALL_BUFFER_SIZE] = "";
+    char password[SMALL_BUFFER_SIZE] = "";
     
-    while(fscanf(receiverlist,"%s %s",name,address) != EOF && i<NUM_SERVERS)
+    while(fscanf(userFile,"%s %s",name,password) != EOF && i<NUM_USERS)
     {
-        strncpy(serverPairs.entry[i].name, name, (strlen(name)+1));
-        strncpy(serverPairs.entry[i].address, address, (strlen(address)+1));
+        strncpy((*users).names[i], name, SMALL_BUFFER_SIZE);
+        strncpy((*users).passwords[i], password, SMALL_BUFFER_SIZE);
         ++i;
-        memset(&name, '\0', (sizeof(char)*MAX_NAME_LENGTH));
-        memset(&address, '\0', (sizeof(char)*MAX_NAME_LENGTH));
     }
 
-    if(i == NUM_SERVERS)
+    if(i == NUM_USERS)
     {
         for(int j = 0; j<i;++j)
         {
-            printf("%i: %s %s\n",j,serverPairs.entry[j].name, serverPairs.entry[j].address);
+            printf("%i: %s %s\n",j,(*users).names[j],(*users).passwords[j]);
         }
         printf("Success.\n");
     }
     else
     {
-        fprintf(stderr, "Found %i user entries. Expected %i\n",i,NUM_SERVERS);
+        fprintf(stderr, "Found %i user entries. Expected %i\n",i,NUM_USERS);
     }
 
-    fclose(receiverlist);
+    fclose(userFile);
 
     return 0;
 }
@@ -98,6 +87,13 @@ int main(int argc, char* argv[])
     printf("Port Number: %i\n", port);
     printf("Window Size: %i\n", window_size);
     */
+
+    struct user_list users;
+
+    if (setup(&users) == -1)
+    {
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }

@@ -33,34 +33,18 @@
 #define ERR_MAX_CLIENTS "Group is full"
 #endif
 
-#ifndef ERR_CLIENT_NO_EXIST
-#define ERR_CLIENT_NO_EXIST "Client is not a member of the group"
+#ifndef NUM_USERS
+#define NUM_USERS 7
 #endif
 
-#ifndef ERR_CLIENT_EXISTS
-#define ERR_CLIENT_EXISTS "Client is already a member"
-#endif
-
-#ifndef CLIENT_CONFIM
-#define CLIENT_CONFIRM "Client was added to the group"
-#endif
-
-#ifndef MSG_CLEARALL
-#define MSG_CLEARALL "User unsubscribed all clients"
-#endif
-
-#ifndef CLIENT_REMOVED
-#define CLIENT_REMOVED "Client was removed from the group"
-#endif
-
-#ifndef MAX_USERS
-#define MAX_USERS 7
+#ifndef USER_LIST
+#define USER_LIST "userList.txt"
 #endif
 
 struct user_list
 {
-    char names[MAX_USERS][SMALL_BUFFER_SIZE];
-    char passwords[MAX_USERS][SMALL_BUFFER_SIZE];
+    char names[NUM_USERS][SMALL_BUFFER_SIZE];
+    char passwords[NUM_USERS][SMALL_BUFFER_SIZE];
 };
 
 struct user_info 
