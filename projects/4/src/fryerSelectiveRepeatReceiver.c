@@ -302,7 +302,37 @@ int main(int argc, char* argv[])
     }
     */
 
-    receiverProgram(&sender);
+    printf("Authentication Successful. Start file transfer? [y/n]: ");
+
+    char *inp;
+
+    if((inp = getInput(SMALL_BUFFER_SIZE)) == NULL)
+    {
+        handleFatalError("Exiting...");
+    }
+    else
+    {
+        while((strcmp(inp, "y") != 0) && (strcmp(inp, "n") != 0))
+        {
+            printf("Unknown option: %s\nPlease enter \'y\' or \'n\'\n%s", inp, RECEIVER_PROMPT);
+            free(inp);
+            if ((inp = getInput(SMALL_BUFFER_SIZE)) == NULL)
+            {
+                handleFatalError("Exiting...");
+            }
+        }
+    }
+
+    if(strcmp(inp, "y") == 0)
+    {
+        receiverProgram(&sender);
+    }
+    else if(strcmp(inp,"n") == 0)
+    {
+        
+    }
+
+    free(inp);
 
     printf("Goodbye.\n");
 
