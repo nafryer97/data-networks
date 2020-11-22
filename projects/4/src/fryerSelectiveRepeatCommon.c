@@ -1,5 +1,47 @@
 #include"fryerSelectiveRepeatCommon.h"
 
+void redStdout(const char *msg)
+{
+    printf("\033[0;31m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
+void greenStdout(const char *msg)
+{
+    printf("\033[0;32m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
+void yellowStdout(const char *msg)
+{
+    printf("\033[0;33m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
+void blueStdout(const char *msg)
+{
+    printf("\033[0;34m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
+void magentaStdout(const char *msg)
+{
+    printf("\033[0;35m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
+void cyanStdout(const char *msg)
+{
+    printf("\033[0;36m");
+    printf("%s\n",msg);
+    printf("\033[0m");
+}
+
 char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *sockaddr)
 {
     int n = 0;
@@ -9,7 +51,8 @@ char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *soc
     
     if((n = recvfrom(sockfd,sbuf,(DEFAULT_BUFFER_SIZE-1),0,(struct sockaddr *)sockaddr,sock_len)) < 0)
     {
-        perror("Error receiving data from socket.\n");
+        int errnum = errno;
+        handleErrorNoMsg(errnum,"Error receiving data from socket");
             
         free(sbuf);
         return NULL;
@@ -18,15 +61,14 @@ char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *soc
     return sbuf;
 }
 
-int sendToUDPSocket(int sockfd, char* str, struct sockaddr_in *dest)
+int sendToUDPSocket(int sockfd, const char* str, struct sockaddr_in *dest)
 {
-    int errsv = 0;
+    int errnum = 0;
     
     if (sendto(sockfd,str,(strlen(str)+1),MSG_CONFIRM,(struct sockaddr *) dest,sizeof(struct sockaddr_in))<0)
     {
-        perror("Error sending message to socket.");
-        errsv = errno;
-        return errsv;
+        errnum = errno;
+        return handleErrorNoRet(errnum, errnum,"Error sending message to socket");
     }
 
     return 0;
@@ -60,20 +102,23 @@ char* getInput(int buffer_size)
         
     while(argument == NULL)
     {
-        argument = fgets(inputBuf, buffer_size, stdin);
+        if((argument = fgets(inputBuf, buffer_size, stdin))==NULL)
+        {
+            int errnum = errno;
+            handleErrorNoMsg(errnum, "Failed to get input from stdin");
+            free(inputBuf);
+            return NULL;
+        }
         
         if (*(inputBuf + (strlen(inputBuf) - 1)) != '\n')
         {
-            printf("Input too long. Please try again.\n");
+            yellowStdout("Input too long. Please try again.");
             argument = NULL;
             memset(inputBuf, '\0', (sizeof(char) * buffer_size));
         }
     }
     
-    removeNewLine(inputBuf);
-    argument = strndup(inputBuf, (strlen(inputBuf)+1));
-    
-    free(inputBuf);
+    removeNewLine(argument);
     
     return argument;
 }
@@ -81,17 +126,20 @@ char* getInput(int buffer_size)
 int parsePortNo(char* arg)
 {
     int port = 0;
+    char errMsg[SMALL_BUFFER_SIZE] = "";
     if ((port = atoi(arg)) != 0)
     {
         if (port < DEFAULT_MIN_PORT || port > DEFAULT_MAX_PORT)
         {
-            printf("Please use a port between %i and %i\n",DEFAULT_MIN_PORT, DEFAULT_MAX_PORT);
+            snprintf(errMsg, SMALL_BUFFER_SIZE,"Please use a port between %i and %i",DEFAULT_MIN_PORT, DEFAULT_MAX_PORT);
+            handleErrorMsg(errMsg);
             port = 0;
         }
     }
     else
     {
-        printf("Error converting port argument to integer.\n");
+        snprintf(errMsg, SMALL_BUFFER_SIZE,"Error converting port argument \"%s\" to integer", arg);
+        handleErrorMsg(errMsg);
     }
 
     return port;
@@ -99,26 +147,30 @@ int parsePortNo(char* arg)
 
 int createUDPClientSocket(int port, const char* address, int *sockfd, struct sockaddr_in *cliaddress)
 {
-    printf("Attempting to open a UDP client socket for address %s and port %i...\n", address,port);
+    char errMsg[MEDIUM_BUFFER_SIZE] = "";
+    
+    snprintf(errMsg, MEDIUM_BUFFER_SIZE,"Attempting to open a UDP client socket for address %s and port %i...", address,port);
 
+    yellowStdout(errMsg);
+    
     memset(cliaddress,0,sizeof(struct sockaddr_in));
  
     (*cliaddress).sin_family = AF_INET;
     (*cliaddress).sin_port=htons(port);
     if(inet_aton(address,&(*cliaddress).sin_addr)==0)
     {
-        fprintf(stderr, "Error creating byte address from supplied address: %s\n",address);
+        snprintf(errMsg, MEDIUM_BUFFER_SIZE,"Error creating byte address from supplied address: %s",address);
+        handleErrorMsg(errMsg);
     }
 
-    *sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (*sockfd < 0)
+    if(((*sockfd) = socket(AF_INET, SOCK_DGRAM, 0))<0)
     {
-        perror("Socket Error.\n");
+        int errnum = errno;
+        handleErrorNoMsg(errnum, "Socket Error");
     }
     else
     {
-        printf("Socket Opened.\n");
+        greenStdout("Socket Opened");
     }
 
     return *sockfd;
@@ -126,18 +178,20 @@ int createUDPClientSocket(int port, const char* address, int *sockfd, struct soc
 
 int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
 {
-    printf("Attempting to open a UDP server socket for port %i...\n",port);
+    char msg[SMALL_BUFFER_SIZE] = "";
+    snprintf(msg, SMALL_BUFFER_SIZE,"Attempting to open a UDP server socket for port %i...",port);
+    yellowStdout(msg);
 
-    int sockfd = socket(AF_INET,SOCK_DGRAM,0);
+    int sockfd = -1; 
     
-    if (sockfd<0)
+    if ((sockfd = socket(AF_INET,SOCK_DGRAM,0))<0)
     {
-        perror("Error in socket.\n");
-        return sockfd;
+        int errnum = errno;
+        return handleErrorNoRet(errnum, sockfd, "Error in Socket");
     }
     else
     {
-        printf("Socket opened.\n");
+        greenStdout("Socket opened.");
     }
 
     memset(serveraddr,0,sizeof(struct sockaddr_in));
@@ -148,13 +202,13 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
 
     if(bind(sockfd, (struct sockaddr*) serveraddr, sizeof(struct sockaddr_in)) < 0)
     {
-        perror("Error in binding.\n");
         close(sockfd);
-        return -1;
+        int errnum = errno;
+        return handleErrorNoRet(errnum, -1,"Error in binding");
     }
     else
     {
-        printf("Bound successfully.\n");
+        greenStdout("Bound successfully");
         return sockfd;
     }
 }
@@ -163,4 +217,48 @@ int usage(char *arg1, char *arg2)
 {
     fprintf(stderr, "Usage: %s %s\n",arg1,arg2);
     return EXIT_SUCCESS;
+}
+
+void handleFatalErrorNo(int en, const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s: %s\n",msg,strerror(en)); 
+    exit(EXIT_FAILURE);
+}
+
+int handleErrorNoRet(int en, int retval, const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s: %s\n", msg, strerror(en));
+    fprintf(stderr, "\033[0m");
+    return retval;
+}
+
+void handleErrorNoMsg(int en, const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s: %s\n", msg, strerror(en));
+    fprintf(stderr, "\033[0m");
+}
+
+void handleFatalError(const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s\n",msg); 
+    exit(EXIT_FAILURE);
+}
+
+int handleErrorRet(int retval, const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s\n", msg);
+    fprintf(stderr, "\033[0m");
+    return retval;
+}
+
+void handleErrorMsg(const char *msg)
+{
+    fprintf(stderr, "\033[1;31m");
+    fprintf(stderr, "%s\n", msg);
+    fprintf(stderr, "\033[0m");
 }
