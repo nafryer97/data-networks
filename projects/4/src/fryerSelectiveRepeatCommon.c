@@ -219,10 +219,18 @@ int usage(char *arg1, char *arg2)
     return EXIT_SUCCESS;
 }
 
-void handleFatalErrorNo(int en, const char *msg)
+void handleFatalErrorNo(int en, const char *msg, int sockfd)
 {
     fprintf(stderr, "\033[1;31m");
+
+    if (sockfd >= 0)
+    {
+        close(sockfd);
+        fprintf(stderr, "Socket closed. ");
+    }
+    
     fprintf(stderr, "%s: %s\n",msg,strerror(en)); 
+    
     exit(EXIT_FAILURE);
 }
 
@@ -241,10 +249,18 @@ void handleErrorNoMsg(int en, const char *msg)
     fprintf(stderr, "\033[0m");
 }
 
-void handleFatalError(const char *msg)
+void handleFatalError(const char *msg, int sockfd)
 {
     fprintf(stderr, "\033[1;31m");
+    
+    if (sockfd >= 0)
+    {
+        close(sockfd);
+        fprintf(stderr, "Socket closed. ");
+    }
+    
     fprintf(stderr, "%s\n",msg); 
+    
     exit(EXIT_FAILURE);
 }
 

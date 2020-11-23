@@ -1,5 +1,236 @@
 #include"fryerSelectiveRepeatSender.h"
 
+int transferProgram(int sockfd, struct sockaddr_in *clientaddr, FILE *inpFile)
+{
+
+    return 0;
+}
+
+
+
+int checkFile(char *fileName, FILE *inpFile)
+{
+    if((inpFile = fopen(fileName, "r")) == NULL)
+    {
+        int errnum = errno;
+        return handleErrorNoRet(errnum, errnum, "Could not open the file that receiver specified");
+    }
+
+    return 0;
+}
+
+int getFileInfo(int sockfd, struct sockaddr_in *clientaddr, char *fileName, FILE *inpFile)
+{
+    int errnum = 0;
+    char *errMsg = NULL;
+    
+    for(;;)
+    {
+        printf("Waiting for file name...");
+        fflush(stdout);
+    
+        if((fileName = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+        {
+            return handleErrorRet(-1, "Error");
+        }
+
+        greenStdout("Received.");
+        
+        if(strcmp(fileName, RECEIVER_TERMINATED) == 0)
+        {
+            return 1;
+        }
+
+        if((errnum = checkFile(fileName, inpFile)) != 0)
+        {
+            errMsg = strerror(errnum);
+            handleErrorMsg(errMsg);
+            
+            if(sendToUDPSocket(sockfd, errMsg, clientaddr) != 0)
+            {
+                return handleErrorRet(-1, "Failed to send error message to receiver");
+            }
+        }
+        else
+        {
+            if(sendToUDPSocket(sockfd, SENDER_ACCEPT, clientaddr) != 0)
+            {
+                return handleErrorRet(-1, "Failed to send error message to receiver");
+            }
+
+            break;
+        }
+        free(fileName);
+        fileName = NULL;
+    }
+
+    return 0;
+}
+
+int getReceiverInfo(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList, int windowSize)
+{
+    int userInd = -1;
+    char accept[SMALL_BUFFER_SIZE] = "";
+    char errMsg[SMALL_BUFFER_SIZE] = "";
+    char *confirm = NULL;
+
+    if ((userInd = authenticate(sockfd, clientaddr, userList)) < 0)
+    {
+        return handleErrorRet(-1,"Failed to authenticate");
+    }
+
+    snprintf(accept, (SMALL_BUFFER_SIZE-1), "%s:%i", SENDER_ACCEPT,windowSize);
+
+    if(sendToUDPSocket(sockfd, accept, clientaddr) != 0)
+    {
+        return handleErrorRet(-1,"Failed to send window size");
+    }
+
+    printf("Welcome, %s\nWaiting for file transfer confirmation...",(*userList).users[userInd].name);
+    fflush(stdout);
+
+    if((confirm = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+    {
+        return handleErrorRet(-1,"Error waiting for confirmation");
+    }
+
+    if(strcmp(confirm, RECEIVER_CONFIRM) == 0)
+    {
+        greenStdout("Confirmed.");
+        free(confirm);
+        return 0;
+    }
+    else if(strcmp(confirm, RECEIVER_N_CONFIRM) == 0)
+    {
+        yellowStdout("Receiver abandoned file transfer request.\n");
+        free(confirm);
+        return 1;
+    }
+    else if(strcmp(confirm, RECEIVER_TERMINATED) == 0)
+    {
+        yellowStdout("Receiver disconnected.\n");
+        free(confirm);
+        return 2;
+    }
+    else
+    {
+        snprintf(errMsg, (SMALL_BUFFER_SIZE-1), "Unexpected reply: %s\n", confirm);
+        free(confirm);
+        return handleErrorRet(3,errMsg);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    int port = 0;
+    int windowSize = 0;
+    int numUsers = 0;
+    int sockfd = 0;
+    
+    char *fileName = NULL;
+    
+    struct user_list userList;
+    struct sockaddr_in addr;
+    struct sockaddr_in clientaddr;
+    
+    FILE *inpFile = NULL;
+   
+    if (argc == 5)
+    {
+        int opt = 0;
+        while((opt = getopt(argc, argv, ":p:w:")) != -1)
+        {
+           switch(opt)
+           {
+                case 'p':
+                    
+                    if ((port = parsePortNo(optarg)) == 0)
+                    {
+                        return usage(argv[0],SENDER_USAGE);
+                    }
+                    break;
+                case 'w':
+                    windowSize= atoi(optarg);
+                    break;
+                case ':':
+                    printf("-%c requires an argument.\n", optopt);
+                    return usage(argv[0],SENDER_USAGE);
+                case '?':
+                    printf("Unknown option %c\n", optopt);
+                    return usage(argv[0],SENDER_USAGE);
+                default:
+                    printf("Something unexpected occurred.\n");
+                    return usage(argv[0],SENDER_USAGE);
+           }
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Expected 4 arguments. %i were provided.\n", (argc-1));
+        return usage(argv[0],SENDER_USAGE);
+    }
+
+    setup(port,&sockfd,&numUsers,&addr,&userList);
+
+    int confirm = -1;
+
+    for(;;)
+    {
+        if((confirm = getReceiverInfo(sockfd,&clientaddr,&userList,windowSize)) == 0)
+        {
+            /* Receiver Confirmed that they had received window size */
+            if((confirm = getFileInfo(sockfd, &clientaddr, fileName, inpFile)) == 0)
+            {
+
+            }
+            else if (confirm == 1)
+            {
+                /* receiver sent terminate message */
+                free(fileName);
+                break;
+            }
+            else
+            {
+                handleFatalError("Exiting....",sockfd);
+            }
+
+            printf("Using file: %s\n", fileName);
+
+            if(inpFile != NULL)
+            {
+                fclose(inpFile);
+                inpFile = NULL;
+            }
+        }
+        else if(confirm == 1)
+        {
+            /* Receiver abandoned the file transfer process */
+            continue;
+        }
+        else if(confirm == 2)
+        {
+            /* Receiver disconnected */
+            break;
+        }
+        else if(confirm == 3)
+        {
+            /* Receiver sent an unexpected message */
+            continue;
+        }
+        else
+        {
+            /* Something went wrong */
+            handleFatalError("Exiting...",sockfd);
+        }
+    }
+
+    close(sockfd);
+
+    greenStdout("\nNo errors were encountered. Goodbye.\n");
+
+    return EXIT_SUCCESS;
+}
+
 int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList)
 {
     char errMsg[SMALL_BUFFER_SIZE] = "";
@@ -10,8 +241,9 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
     for(;;)
     {
         memset(clientaddr, 0, sizeof(struct sockaddr_in));
-        printf("Waiting for username...\n");
-
+        printf("Waiting for username...");
+        fflush(stdout);
+        
         if((name = readFromUDPSocket(sockfd, &socklen, clientaddr)) == NULL)
         {
             return handleErrorRet(-1, "Error waiting for username");        
@@ -23,7 +255,8 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
             return handleErrorRet(-1, "Error sending confirmation message");
         }
 
-        printf("Waiting for password...\n");
+        printf("Received.\nWaiting for password...");
+        fflush(stdout);
 
         if((password = readFromUDPSocket(sockfd, &socklen, clientaddr)) == NULL)
         {
@@ -38,7 +271,8 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
             return handleErrorRet(-1, "Error sending confirmation message");
         }
 
-        printf("Verifying...\n");
+        printf("Received.\nVerifying...");
+        fflush(stdout);
 
         for(int i = 0; i < NUM_USERS; ++i)
         {
@@ -50,7 +284,7 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
             }
         }
 
-        snprintf(errMsg, SMALL_BUFFER_SIZE, "Auth failed. Name: %s Password: %s", name, password);
+        snprintf(errMsg, SMALL_BUFFER_SIZE, "Auth failed: %s %s", name, password);
         redStdout(errMsg);
 
         free(name);
@@ -64,68 +298,114 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
     }
 }
 
-int main(int argc, char* argv[])
+void setup(int port, int *sockfd, int *numUsers, struct sockaddr_in *addr, struct user_list *userList)
 {
-    char server_usage[] = "[-p PORT_NUMBER] [-w WINODW_SIZE]";
+    pthread_t tid;
+    int thres = 0;
+    void *thrval = NULL;
 
-    int port = 0;
-    int window_size = 0;
-
-    if (argc == 5)
+    if((thres = pthread_create(&tid, NULL, thr_createUserList, userList))!=0)
     {
-        int opt = 0;
-        while((opt = getopt(argc, argv, ":p:w:")) != -1)
-        {
-           switch(opt)
-           {
-                case 'p':
-                    
-                    if ((port = parsePortNo(optarg)) == 0)
-                    {
-                        return usage(argv[0],server_usage);
-                    }
-                    break;
-                case 'w':
-                    window_size = atoi(optarg);
-                    break;
-                case ':':
-                    printf("-%c requires an argument.\n", optopt);
-                    return usage(argv[0],server_usage);
-                case '?':
-                    printf("Unknown option %c\n", optopt);
-                    return usage(argv[0],server_usage);
-                default:
-                    printf("Something unexpected occurred.\n");
-                    return usage(argv[0],server_usage);
-           }
-        }
+        handleFatalErrorNo(thres, "Fatal Error in pthread_create. Exiting...", -1);
+    }
+
+    if(((*sockfd)=createUDPServerSocket(port, addr))<0)
+    {
+        handleFatalError("Exiting...",-1);
+    }
+
+    if((thres = pthread_join(tid,&thrval)) != 0)
+    {
+        handleFatalErrorNo(thres, "Fatal Error in pthread_join. Exiting...", (*sockfd));
+    }
+
+    if(thrval != NULL)
+    {
+        memcpy(numUsers, thrval, sizeof(int));
+        free(thrval);
     }
     else
     {
-        return usage(argv[0],server_usage);
+        handleFatalError("User list file thread did not return a value",(*sockfd));
     }
 
-    yellowStdout("Retrieving user info...");
+    if((*numUsers) == NUM_USERS)
+    {
+        printUserList(userList, (*numUsers));
+    }
+    else if ((*numUsers) < 1)
+    {
+        handleFatalError("Exiting...",(*sockfd));
+    }
+    else
+    {
+        printUserList(userList, (*numUsers));
+    }
+}
 
-    struct user_list userList;
+void printUserList(struct user_list *userList, int i)
+{
+    char namesRead[((7+SMALL_BUFFER_SIZE)*2*NUM_USERS)] = "";
+    char entry[((7+SMALL_BUFFER_SIZE)*2)] = "";
+
+    for(int j = 0; j<i;++j)
+    {
+        snprintf(entry, ((6+SMALL_BUFFER_SIZE)*2), "%i: %s %s\n",j,(*userList).users[j].name,(*userList).users[j].password);
+        strncat(namesRead, entry, strlen(entry));
+
+        memset(entry, '\0', sizeof(entry));
+    }
+    
+    cyanStdout(namesRead);
+}
+
+int createUserList(struct user_list *userList)
+{
+    char name[SMALL_BUFFER_SIZE] = "";
+    char password[SMALL_BUFFER_SIZE] = "";
+    int numRead = 0;
+
     FILE *userFile;
+    
+    printf("Retrieving user info...");
+
+    for (int i=0; i < NUM_USERS; ++i)
+    {
+        memset((*userList).users[i].name, '\0', (sizeof(char)*SMALL_BUFFER_SIZE));
+        memset((*userList).users[i].password, '\0', (sizeof(char)*SMALL_BUFFER_SIZE));
+    }
 
     if ((userFile = fopen(USER_LIST,"r")) == NULL)
     {
         int errnum = errno;
-        handleFatalErrorNo(errnum, "Error opening receiver list file");
+        char errMsg[SMALL_BUFFER_SIZE] = "";
+        snprintf(errMsg, (SMALL_BUFFER_SIZE-1), "Error opening user list file: %s", USER_LIST);
+        return handleErrorNoRet(errnum, -1, errMsg);
     }
 
-    char name[SMALL_BUFFER_SIZE];
-    char password[SMALL_BUFFER_SIZE];
-    int i;
-
-    for(i=0;i<NUM_USERS;++i)
+    for(int i=0;i<NUM_USERS;++i)
     {
         if(fscanf(userFile,"%s %s",name,password)!=EOF)
         {
-            strncpy(userList.users[i].name, name, SMALL_BUFFER_SIZE);
-            strncpy(userList.users[i].password, password, SMALL_BUFFER_SIZE);
+            strncpy((*userList).users[i].name, name, (SMALL_BUFFER_SIZE-1));
+            strncpy((*userList).users[i].password, password, (SMALL_BUFFER_SIZE-1));
+            memset(name, '\0', (sizeof(char)*SMALL_BUFFER_SIZE));
+            memset(password, '\0', (sizeof(char)*SMALL_BUFFER_SIZE));
+            ++numRead;
+        }
+        else if(ferror(userFile) != 0)
+        {
+            int errnum = errno;
+            if (fclose(userFile) != 0)
+            {
+                handleErrorNoMsg(errnum, "Error reading user list file");
+                errnum = errno;
+                return handleErrorNoRet(errnum, -1, "Error closing user list file");
+            }
+            else
+            {
+                return handleErrorNoRet(errnum, -1, "Error reading user list file");
+            }
         }
         else
         {
@@ -133,58 +413,37 @@ int main(int argc, char* argv[])
         }
     }
 
-    if(i == NUM_USERS)
+    fclose(userFile);
+    return numRead;
+}
+
+void *thr_createUserList(void *info)
+{
+    char errMsg[SMALL_BUFFER_SIZE] = "";
+    void *retval = malloc(sizeof(int));
+    int numUsers = 0;
+
+    memset(retval, 0, sizeof(int));
+
+    struct user_list *userList = (struct user_list *)info;
+    
+    numUsers = createUserList(userList);
+
+    memcpy(retval, &numUsers, sizeof(int));
+
+    if(numUsers == NUM_USERS)
     {
-        for(int j = 0; j<i;++j)
-        {
-            printf("%i: %s %s\n",j,userList.users[j].name,userList.users[j].password);
-        }
         greenStdout("Success.");
+    }
+    else if(numUsers < 1)
+    {
+        handleErrorMsg("Unable to retrieve users");
     }
     else
     {
-        char errMsg[SMALL_BUFFER_SIZE] = "";
-        snprintf(errMsg, SMALL_BUFFER_SIZE, "Found %i user entries. Expected %i",i,NUM_USERS);
-        redStdout(errMsg);
+        snprintf(errMsg, (SMALL_BUFFER_SIZE-1), "\nFound %i user entries. Expected %i",numUsers,NUM_USERS);
+        yellowStdout(errMsg);
     }
 
-    fclose(userFile);
-
-    int sockfd = 0;
-    struct sockaddr_in addr;
-    struct sockaddr_in clientaddr;
-
-    if((sockfd=createUDPServerSocket(port, &addr))<0)
-    {
-        handleFatalError("Exiting...");
-    }
-
-    int useri = authenticate(sockfd, &clientaddr, &userList);
-
-    if (useri < 0)
-    {
-        close(sockfd);
-        handleFatalError("Exiting...");
-    }
-
-    char accept[SMALL_BUFFER_SIZE] = "";
-    snprintf(accept, SMALL_BUFFER_SIZE, "%s:%i", SENDER_ACCEPT,window_size);
-
-    //printf("Sending message \"%s\"\n",accept);
-
-    if(sendToUDPSocket(sockfd, accept, &clientaddr) != 0)
-    {
-        close(sockfd);
-        handleFatalError("Exiting...");
-    }
-
-    char welcome[SMALL_BUFFER_SIZE] = "";
-
-    snprintf(welcome, SMALL_BUFFER_SIZE,"Welcome %s",userList.users[useri].name);
-
-    greenStdout(welcome);
-
-    close(sockfd);
-
-    return EXIT_SUCCESS;
+    return retval;
 }

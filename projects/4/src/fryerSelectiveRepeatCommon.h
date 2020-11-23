@@ -45,12 +45,24 @@
 #define SENDER_CONFIRM "SAck"
 #endif
 
+#ifndef SENDER_N_CONFIRM
+#define SENDER_N_CONFIRM "SNAck"
+#endif
+
 #ifndef SENDER_ACCEPT
 #define SENDER_ACCEPT "Accepted"
 #endif
 
 #ifndef RECEIVER_CONFIRM 
 #define RECEIVER_CONFIRM "RAck"
+#endif
+
+#ifndef RECEIVER_N_CONFIRM
+#define RECEIVER_N_CONFIRM "RNack"
+#endif
+
+#ifndef RECEIVER_TERMINATED
+#define RECEIVER_TERMINATED "Disconnect"
 #endif
 
 struct user_info 
@@ -92,13 +104,13 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr);
 
 int usage(char *arg1, char *arg2);
 
-void handleFatalErrorNo(int en, const char *msg);
+void handleFatalErrorNo(int en, const char *msg, int sockfd);
 
 int handleErrorNoRet(int en, int retval, const char *msg);
 
 void handleErrorNoMsg(int en, const char *msg);
 
-void handleFatalError(const char *msg);
+void handleFatalError(const char *msg, int sockfd);
 
 int handleErrorRet(int retval, const char *msg);
 

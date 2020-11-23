@@ -3,6 +3,10 @@
 
 #include"fryerSelectiveRepeatCommon.h"
 
+#ifndef RECEIVER_USAGE
+#define RECEIVER_USAGE "[-s SERVER_IP_ADDRESS] [-p PORT_NUMBER] [-i INPUT_FILE] [-o OUTPUT_FILE]\n\nPort Number must be between 50000 and 59999.\nInput file name will be sent to the server. Output file will be created locally."
+#endif
+
 #ifndef RECEIVER_PROMPT
 #define RECEIVER_PROMPT "P4receiver~%"
 #endif
@@ -29,16 +33,20 @@ struct sender_info
     char outFileName[SMALL_BUFFER_SIZE];
 };
 
-void *listenToSender(void *info);
+
+int main(int argc, char *argv[]);
+
+void setup(int port, char *address, struct user_info *credentials, struct sender_info *sender, int *windowSize);
+
+int confirmTransfer(struct sender_info *sender);
+
+int sendFileInfo(char *inpFile, struct sender_info *sender);
 
 int waitForConfirmation(struct sender_info *sender);
 
 int sendCredentials(const char *name, const char*password, struct sender_info *sender);
 
-int receiverProgram(struct sender_info *sender);
-
 int getCredentials(struct user_info *credentials);
 
-int main(int argc, char *argv[]);
-
+//void *listenToSender(void *info);
 #endif
