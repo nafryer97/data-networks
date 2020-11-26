@@ -1,124 +1,98 @@
 #include"fryerSelectiveRepeatSender.h"
 
-int transferProgram(int sockfd, struct sockaddr_in *clientaddr, FILE *inpFile)
+int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr)
 {
-
-    return 0;
-}
-
-
-
-int checkFile(char *fileName, FILE *inpFile)
-{
-    if((inpFile = fopen(fileName, "r")) == NULL)
-    {
-        int errnum = errno;
-        return handleErrorNoRet(errnum, errnum, "Could not open the file that receiver specified");
-    }
-
-    return 0;
-}
-
-int getFileInfo(int sockfd, struct sockaddr_in *clientaddr, char *fileName, FILE *inpFile)
-{
-    int errnum = 0;
-    char *errMsg = NULL;
-    
-    for(;;)
-    {
-        printf("Waiting for file name...");
-        fflush(stdout);
-    
-        if((fileName = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
-        {
-            return handleErrorRet(-1, "Error");
-        }
-
-        greenStdout("Received.");
-        
-        if(strcmp(fileName, RECEIVER_TERMINATED) == 0)
-        {
-            return 1;
-        }
-
-        if((errnum = checkFile(fileName, inpFile)) != 0)
-        {
-            errMsg = strerror(errnum);
-            handleErrorMsg(errMsg);
-            
-            if(sendToUDPSocket(sockfd, errMsg, clientaddr) != 0)
-            {
-                return handleErrorRet(-1, "Failed to send error message to receiver");
-            }
-        }
-        else
-        {
-            if(sendToUDPSocket(sockfd, SENDER_ACCEPT, clientaddr) != 0)
-            {
-                return handleErrorRet(-1, "Failed to send error message to receiver");
-            }
-
-            break;
-        }
-        free(fileName);
-        fileName = NULL;
-    }
-
-    return 0;
-}
-
-int getReceiverInfo(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList, int windowSize)
-{
-    int userInd = -1;
-    char accept[SMALL_BUFFER_SIZE] = "";
-    char errMsg[SMALL_BUFFER_SIZE] = "";
-    char *confirm = NULL;
-
-    if ((userInd = authenticate(sockfd, clientaddr, userList)) < 0)
-    {
-        return handleErrorRet(-1,"Failed to authenticate");
-    }
-
-    snprintf(accept, (SMALL_BUFFER_SIZE-1), "%s:%i", SENDER_ACCEPT,windowSize);
-
-    if(sendToUDPSocket(sockfd, accept, clientaddr) != 0)
-    {
-        return handleErrorRet(-1,"Failed to send window size");
-    }
-
-    printf("Welcome, %s\nWaiting for file transfer confirmation...",(*userList).users[userInd].name);
+    int fd = -1;
+    int errnum = -1;
+   
+    printf("Initializing transfer statistics structure...");
     fflush(stdout);
 
-    if((confirm = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+    memset(stats, 0, sizeof((*stats)));
+    memcpy(&(*stats).recvaddr,clientaddr,sizeof((*stats).recvaddr)); 
+    
+    if((fd = fileno(inpFile)) == -1)
     {
-        return handleErrorRet(-1,"Error waiting for confirmation");
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file descriptor");
     }
 
-    if(strcmp(confirm, RECEIVER_CONFIRM) == 0)
+    if(fstat(fd,&(*stats).statbuf) != 0)
     {
-        greenStdout("Confirmed.");
-        free(confirm);
-        return 0;
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file stats");
     }
-    else if(strcmp(confirm, RECEIVER_N_CONFIRM) == 0)
-    {
-        yellowStdout("Receiver abandoned file transfer request.\n");
-        free(confirm);
-        return 1;
-    }
-    else if(strcmp(confirm, RECEIVER_TERMINATED) == 0)
-    {
-        yellowStdout("Receiver disconnected.\n");
-        free(confirm);
-        return 2;
-    }
-    else
-    {
-        snprintf(errMsg, (SMALL_BUFFER_SIZE-1), "Unexpected reply: %s\n", confirm);
-        free(confirm);
-        return handleErrorRet(3,errMsg);
-    }
+
+    strncpy((*stats).fileName, fileName, SMALL_BUFFER_SIZE);
+
+    greenStdout("Success.");
+
+    return 0;
 }
+
+void printTransferStats(struct transfer_stats *stats)
+{
+    char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
+    char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
+    char nackEntry[14] = "";
+   
+    if ((*stats).totNack > 0)
+    {
+        for(int i = 0; i < MAX_NACK_SEQ; ++i)
+        {
+            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
+            {
+                /* buffer overrun */
+                break;
+            }
+            else if (i == ((*stats).totNack-1))
+            {
+                /* last entry */
+                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                break;
+            } 
+            else
+            {
+                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                memset(nackEntry,'\0',(sizeof(char)*14));
+            }
+        }
+    }
+
+    snprintf(statsBuf,
+            ((DEFAULT_BUFFER_SIZE*2)-1),
+            "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %s\nNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\n Sequence numbers of negative acknowledgements: %s",
+            inet_ntoa((*stats).recvaddr.sin_addr),
+            ntohs((*stats).recvaddr.sin_port),
+            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
+            ctime(&(*stats).statbuf.st_mtime),
+            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
+
+    cyanStdout(statsBuf);
+}
+
+int transferProgram(int sockfd,struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile)
+{
+    struct frame fr;
+    struct transfer_stats stats;
+    int errnum = 0;
+
+    printf("Starting transfer procedures...");
+
+    memset(&fr, 0, sizeof(fr));
+
+    if(statInit(fileName, inpFile, &stats, clientaddr) != 0)
+    {
+        return handleErrorRet(-1,"Error initializing stats info");
+    }
+
+    printTransferStats(&stats);
+
+    return 0;
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -179,14 +153,14 @@ int main(int argc, char* argv[])
         if((confirm = getReceiverInfo(sockfd,&clientaddr,&userList,windowSize)) == 0)
         {
             /* Receiver Confirmed that they had received window size */
-            if((confirm = getFileInfo(sockfd, &clientaddr, fileName, inpFile)) == 0)
+            if((confirm = getFileInfo(sockfd, &clientaddr, &fileName, &inpFile)) == 0)
             {
-
+                printf("Using file: %s\n", fileName);
+                transferProgram(sockfd,&clientaddr,fileName,inpFile);
             }
             else if (confirm == 1)
             {
                 /* receiver sent terminate message */
-                free(fileName);
                 break;
             }
             else
@@ -194,8 +168,12 @@ int main(int argc, char* argv[])
                 handleFatalError("Exiting....",sockfd);
             }
 
-            printf("Using file: %s\n", fileName);
-
+            
+            if(fileName != NULL)
+            {
+                free(fileName);
+            }
+            
             if(inpFile != NULL)
             {
                 fclose(inpFile);
@@ -229,6 +207,122 @@ int main(int argc, char* argv[])
     greenStdout("\nNo errors were encountered. Goodbye.\n");
 
     return EXIT_SUCCESS;
+}
+
+int checkFile(char *fileName, FILE **inpFile)
+{
+    if(((*inpFile) = fopen(fileName, "r")) == NULL)
+    {
+        int errnum = errno;
+        return handleErrorNoRet(errnum, errnum, "Could not open the file that receiver specified");
+    }
+
+    return 0;
+}
+
+int getFileInfo(int sockfd, struct sockaddr_in *clientaddr, char **fileName, FILE **inpFile)
+{
+    int errnum = 0;
+    char *errMsg = NULL;
+    
+    for(;;)
+    {
+        printf("Waiting for file name...");
+        fflush(stdout);
+    
+        if(((*fileName) = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+        {
+            return handleErrorRet(-1, "Error");
+        }
+
+        greenStdout("Received.");
+        
+        if(strcmp((*fileName), RECEIVER_TERMINATED) == 0)
+        {
+            free((*fileName));
+            (*fileName) = NULL;
+            return 1;
+        }
+
+        if((errnum = checkFile((*fileName), inpFile)) != 0)
+        {
+            errMsg = strerror(errnum);
+            handleErrorMsg(errMsg);
+            
+            if(sendToUDPSocket(sockfd, errMsg, clientaddr) != 0)
+            {
+                free((*fileName));
+                (*fileName) = NULL;
+                return handleErrorRet(-1, "Failed to send error message to receiver");
+            }
+        }
+        else
+        {
+            if(sendToUDPSocket(sockfd, SENDER_ACCEPT, clientaddr) != 0)
+            {
+                free((*fileName));
+                (*fileName) = NULL;
+                return handleErrorRet(-1, "Failed to send error message to receiver");
+            }
+
+            return 0;
+        }
+        free((*fileName));
+        (*fileName) = NULL;
+    }
+}
+
+int getReceiverInfo(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList, int windowSize)
+{
+    int userInd = -1;
+    char accept[SMALL_BUFFER_SIZE] = "";
+    char errMsg[SMALL_BUFFER_SIZE] = "";
+    char *confirm = NULL;
+
+    if ((userInd = authenticate(sockfd, clientaddr, userList)) < 0)
+    {
+        return handleErrorRet(-1,"Failed to authenticate");
+    }
+
+    snprintf(accept, (SMALL_BUFFER_SIZE-1), "%s:%i", SENDER_ACCEPT,windowSize);
+
+    if(sendToUDPSocket(sockfd, accept, clientaddr) != 0)
+    {
+        return handleErrorRet(-1,"Failed to send window size");
+    }
+
+    printf("Welcome, %s\nWaiting for file transfer confirmation...",(*userList).users[userInd].name);
+    fflush(stdout);
+
+    if((confirm = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+    {
+        return handleErrorRet(-1,"Error waiting for confirmation");
+    }
+
+    if(strcmp(confirm, RECEIVER_CONFIRM) == 0)
+    {
+        greenStdout("Confirmed.");
+        free(confirm);
+        return 0;
+    }
+    else if(strcmp(confirm, RECEIVER_N_CONFIRM) == 0)
+    {
+        yellowStdout("Receiver abandoned file transfer request.\n");
+        free(confirm);
+        return 1;
+    }
+    else if(strcmp(confirm, RECEIVER_TERMINATED) == 0)
+    {
+        yellowStdout("Receiver disconnected.\n");
+        free(confirm);
+        return 2;
+    }
+    else
+    {
+        snprintf(errMsg, (SMALL_BUFFER_SIZE-1), "Unexpected reply: %s\n", confirm);
+        free(confirm);
+        return handleErrorRet(3,errMsg);
+    }
 }
 
 int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList)

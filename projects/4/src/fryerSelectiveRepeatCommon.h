@@ -5,9 +5,12 @@
 #include<unistd.h>
 #include<stdlib.h>
 #include<sys/types.h>
+#include<sys/stat.h>
+#include<string.h>
+#include<stdint.h>
+#include<time.h>
 #include<sys/socket.h>
 #include<netinet/in.h>
-#include<string.h>
 #include<arpa/inet.h>
 #include<errno.h>
 #include<netdb.h>
@@ -65,6 +68,16 @@
 #define RECEIVER_TERMINATED "Disconnect"
 #endif
 
+#ifndef MAX_PACK
+#define MAX_PACK 256
+#endif
+
+#ifndef MAX_NACK_SEQ
+#define MAX_NACK_SEQ 100
+#endif
+
+enum fr_kind{data, ack, nack};
+
 struct user_info 
 {
     char name[SMALL_BUFFER_SIZE];
@@ -74,6 +87,26 @@ struct user_info
 struct user_list
 {
     struct user_info users[NUM_USERS];
+};
+
+struct frame
+{
+    enum fr_kind kind;
+    unsigned int seqNo;
+    unsigned int ackNo;
+    char data[MAX_PACK];
+};
+
+struct transfer_stats
+{
+    struct sockaddr_in recvaddr;
+    struct stat statbuf;
+    char fileName[SMALL_BUFFER_SIZE];
+    int totPack;
+    int totRetr;
+    int totAck;
+    int totNack;
+    int seqNack[MAX_NACK_SEQ];
 };
 
 void redStdout(const char *msg);
