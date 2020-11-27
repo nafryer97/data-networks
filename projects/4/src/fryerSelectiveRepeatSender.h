@@ -8,14 +8,20 @@
 #endif
 
 #ifndef SENDER_USAGE
-#define SENDER_USAGE "[ -p PORT_NUMBER ] [ -w WINODW_SIZE ]\n\nMust use a port between 50000 and 59999 (inclusive).\nUndergraduates need only implement window size of 1.\n"
+#define SENDER_USAGE "[ -p PORT_NUMBER ] [ -w WINDOW_SIZE ]\n\nMust use a port between 50000 and 59999 (inclusive).\nUndergraduates need only implement window size of 1.\n"
 #endif
+
+int slidingWindowProtocol(int sockfd, int windowSize,struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile);
+
+int getPacketFromFile(unsigned char *buf, FILE *inpFile);
+
+int transferProgram(int sockfd,int windowSize, struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile);
 
 int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr);
 
 void printTransferStats(struct transfer_stats *stats);
 
-int transferProgram(int sockfd,struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile);
+int transferProgram(int sockfd,int windowSize, struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile);
 
 int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *userList);
 

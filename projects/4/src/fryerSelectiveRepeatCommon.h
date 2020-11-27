@@ -94,7 +94,7 @@ struct frame
     enum fr_kind kind;
     unsigned int seqNo;
     unsigned int ackNo;
-    char data[MAX_PACK];
+    unsigned char packet[MAX_PACK];
 };
 
 struct transfer_stats

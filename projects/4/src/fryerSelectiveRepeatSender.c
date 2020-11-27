@@ -1,94 +1,70 @@
 #include"fryerSelectiveRepeatSender.h"
 
-int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr)
-{
-    int fd = -1;
-    int errnum = -1;
-   
-    printf("Initializing transfer statistics structure...");
-    fflush(stdout);
-
-    memset(stats, 0, sizeof((*stats)));
-    memcpy(&(*stats).recvaddr,clientaddr,sizeof((*stats).recvaddr)); 
-    
-    if((fd = fileno(inpFile)) == -1)
-    {
-        errnum = errno;
-        return handleErrorNoRet(errnum, -1, "Error retrieving file descriptor");
-    }
-
-    if(fstat(fd,&(*stats).statbuf) != 0)
-    {
-        errnum = errno;
-        return handleErrorNoRet(errnum, -1, "Error retrieving file stats");
-    }
-
-    strncpy((*stats).fileName, fileName, SMALL_BUFFER_SIZE);
-
-    greenStdout("Success.");
-
-    return 0;
-}
-
-void printTransferStats(struct transfer_stats *stats)
-{
-    char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
-    char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
-    char nackEntry[14] = "";
-   
-    if ((*stats).totNack > 0)
-    {
-        for(int i = 0; i < MAX_NACK_SEQ; ++i)
-        {
-            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
-            {
-                /* buffer overrun */
-                break;
-            }
-            else if (i == ((*stats).totNack-1))
-            {
-                /* last entry */
-                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                break;
-            } 
-            else
-            {
-                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                memset(nackEntry,'\0',(sizeof(char)*14));
-            }
-        }
-    }
-
-    snprintf(statsBuf,
-            ((DEFAULT_BUFFER_SIZE*2)-1),
-            "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %s\nNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\n Sequence numbers of negative acknowledgements: %s",
-            inet_ntoa((*stats).recvaddr.sin_addr),
-            ntohs((*stats).recvaddr.sin_port),
-            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
-            ctime(&(*stats).statbuf.st_mtime),
-            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
-
-    cyanStdout(statsBuf);
-}
-
-int transferProgram(int sockfd,struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile)
+int slidingWindowProtocol(int sockfd, int windowSize,struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile)
 {
     struct frame fr;
-    struct transfer_stats stats;
-    int errnum = 0;
-
-    printf("Starting transfer procedures...");
-
     memset(&fr, 0, sizeof(fr));
 
+    unsigned char packBuf[MAX_PACK] = "";
+    int errnum = 0;
+    int totPack = 0;
+
+    totPack = (((int)(*stats).statbuf.st_size)+((int)(*stats).statbuf.st_size % MAX_PACK))/MAX_PACK;
+
+    printf("Transferring a file size %ju will require %u packets of size %u\n",
+            (intmax_t)(*stats).statbuf.st_size,totPack,MAX_PACK);
+    
+    errnum = getPacketFromFile(packBuf, inpFile);
+
+    while(errnum == 0)
+    {
+
+    }
+
+
+
+
+
+    /*   
+    if((errnum = getPacketFromFile(packBuf,inpFile)) == 0)
+    {
+        yellowStdout(packBuf);
+    }
+    else if (errnum == 1)
+    {
+        yellowStdout(packBuf);
+    }
+    else if (errnum == 2)
+    {
+        yellowStdout(packBuf);
+    }
+    else if (errnum == -1)
+    {
+        handleErrorRet(-1, "Error constructing packet data.");
+    }
+    else if (errnum == -2)
+    {
+        handleErrorRet(-2, "Error constructing packet data.");
+    }
+    else if(errnum == 3)
+    {
+        handleErrorRet(3, "Error constructing packet data.");
+    }
+    */
+
+}
+
+int transferProgram(int sockfd,int windowSize, struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile)
+{
+    struct transfer_stats stats;
     if(statInit(fileName, inpFile, &stats, clientaddr) != 0)
     {
         return handleErrorRet(-1,"Error initializing stats info");
     }
 
-    printTransferStats(&stats);
+    printf("Using file: %s\nStarting transfer procedures...",fileName);
+
+    slidingWindowProtocol(sockfd, windowSize,clientaddr, &stats, inpFile);
 
     return 0;
 }
@@ -155,8 +131,7 @@ int main(int argc, char* argv[])
             /* Receiver Confirmed that they had received window size */
             if((confirm = getFileInfo(sockfd, &clientaddr, &fileName, &inpFile)) == 0)
             {
-                printf("Using file: %s\n", fileName);
-                transferProgram(sockfd,&clientaddr,fileName,inpFile);
+                transferProgram(sockfd,windowSize,&clientaddr,fileName,inpFile);
             }
             else if (confirm == 1)
             {
@@ -207,6 +182,43 @@ int main(int argc, char* argv[])
     greenStdout("\nNo errors were encountered. Goodbye.\n");
 
     return EXIT_SUCCESS;
+}
+
+int getPacketFromFile(unsigned char *buf, FILE *inpFile)
+{
+    size_t ret = fread(buf,sizeof(*buf),MAX_PACK,inpFile);
+    if(ret == MAX_PACK)
+    {
+        /* no errors */
+        return 0;
+    }
+    else if(ret>0)
+    {
+        /* read some bytes, but not the expected amount */
+        if(feof(inpFile)!=0)
+        {
+            yellowStdout("End of File");
+            return 1;
+        }
+        else if (ferror(inpFile)!=0)
+        {
+            return handleErrorRet(2, "Error reading from file");
+        }
+    }
+    else
+    {
+        /* read nothing */
+        if(feof(inpFile)!=0)
+        {
+            return handleErrorRet(-1, "End of file. No bytes read.");
+        }
+        else if (ferror(inpFile)!=0)
+        {
+            return handleErrorRet(-2, "Error reading file. No bytes read.");
+        }
+    }
+
+    return 3;
 }
 
 int checkFile(char *fileName, FILE **inpFile)
@@ -349,7 +361,8 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
             return handleErrorRet(-1, "Error sending confirmation message");
         }
 
-        printf("Received.\nWaiting for password...");
+        greenStdout("Received.");
+        printf("Waiting for password...");
         fflush(stdout);
 
         if((password = readFromUDPSocket(sockfd, &socklen, clientaddr)) == NULL)
@@ -365,7 +378,8 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
             return handleErrorRet(-1, "Error sending confirmation message");
         }
 
-        printf("Received.\nVerifying...");
+        greenStdout("Received.");
+        printf("Verifying...");
         fflush(stdout);
 
         for(int i = 0; i < NUM_USERS; ++i)
@@ -439,6 +453,8 @@ void setup(int port, int *sockfd, int *numUsers, struct sockaddr_in *addr, struc
 
 void printUserList(struct user_list *userList, int i)
 {
+    printf("\n\tBegin User Entries\n\n");
+
     char namesRead[((7+SMALL_BUFFER_SIZE)*2*NUM_USERS)] = "";
     char entry[((7+SMALL_BUFFER_SIZE)*2)] = "";
 
@@ -450,7 +466,7 @@ void printUserList(struct user_list *userList, int i)
         memset(entry, '\0', sizeof(entry));
     }
     
-    cyanStdout(namesRead);
+    printf("%s\n\tEnd\n\n",namesRead);
 }
 
 int createUserList(struct user_list *userList)
@@ -509,6 +525,83 @@ int createUserList(struct user_list *userList)
 
     fclose(userFile);
     return numRead;
+}
+
+int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr)
+{
+    int fd = -1;
+    int errnum = -1;
+   
+    printf("Initializing statistics structure...");
+    fflush(stdout);
+
+    memset(stats, 0, sizeof((*stats)));
+    memcpy(&(*stats).recvaddr,clientaddr,sizeof((*stats).recvaddr)); 
+    
+    if((fd = fileno(inpFile)) == -1)
+    {
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file descriptor");
+    }
+
+    if(fstat(fd,&(*stats).statbuf) != 0)
+    {
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file stats");
+    }
+
+    strncpy((*stats).fileName, fileName, SMALL_BUFFER_SIZE);
+
+    greenStdout("Success.");
+
+    return 0;
+}
+
+void printTransferStats(struct transfer_stats *stats)
+{
+    char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
+    char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
+    char nackEntry[14] = "";
+
+    printf("\n\tPrinting Statistics\n");
+
+    if ((*stats).totNack > 0)
+    {
+        for(int i = 0; i < MAX_NACK_SEQ; ++i)
+        {
+            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
+            {
+                /* buffer overrun */
+                break;
+            }
+            else if (i == ((*stats).totNack-1))
+            {
+                /* last entry */
+                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                break;
+            } 
+            else
+            {
+                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                memset(nackEntry,'\0',(sizeof(char)*14));
+            }
+        }
+    }
+
+    snprintf(statsBuf,
+            ((DEFAULT_BUFFER_SIZE*2)-1),
+            "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %sNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\nSequence numbers of negative acknowledgements: %s",
+            inet_ntoa((*stats).recvaddr.sin_addr),
+            ntohs((*stats).recvaddr.sin_port),
+            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
+            ctime(&(*stats).statbuf.st_mtime),
+            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
+
+    cyanStdout(statsBuf);
+
+    printf("\n\tComplete\n");
 }
 
 void *thr_createUserList(void *info)

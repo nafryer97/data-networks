@@ -61,6 +61,18 @@ char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *soc
     return sbuf;
 }
 
+int sendFrameUDP(int sockfd, const struct frame *fr, const struct sockaddr_in *dest)
+{
+    int errnum = 0;
+
+    if(sendTo(sockfd,fr,sizeof((*fr)),MSG_CONFIRM,(struct sockaddr *)dest,sizeof((*dest)))<0)
+    {
+
+    }
+
+    return 0;
+}
+
 int sendToUDPSocket(int sockfd, const char* str, struct sockaddr_in *dest)
 {
     int errnum = 0;
