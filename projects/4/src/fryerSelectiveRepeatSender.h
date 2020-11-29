@@ -11,6 +11,8 @@
 #define SENDER_USAGE "[ -p PORT_NUMBER ] [ -w WINDOW_SIZE ]\n\nMust use a port between 50000 and 59999 (inclusive).\nUndergraduates need only implement window size of 1.\n"
 #endif
 
+int notifyReceiverFileSize(int sockfd, intmax_t fSize, struct sockaddr_in *clientaddr);
+
 int slidingWindowProtocol(int sockfd, const unsigned int ws,struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile);
 
 int getPacketFromFile(unsigned char *buf, FILE *inpFile);

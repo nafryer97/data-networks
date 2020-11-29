@@ -1,56 +1,5 @@
 #include"fryerSelectiveRepeatSender.h"
 
-int notifyReceiverFileSize(int sockfd, intmax_t fSize, struct sockaddr_in *clientaddr)
-{
-    printf("Sending file size to receiver...");
-    fflush(stdout);
-    struct frame fr;
-    int errnum = 0;
-    memset(&fr,0,sizeof(fr));
-
-    fr.kind = data;
-    fr.seqNo = 0;
-    fr.fSize = fSize;
-
-    //printFrame(&fr);
-
-    if((errnum=sendFrameUDP(sockfd,&fr,clientaddr))!=0)
-    {
-        return handleErrorNoRet(errnum,errnum,"Error sending file size to receiver");
-    }
-
-    greenStdout("Success");
-
-    memset(&fr,0,sizeof(fr));
-
-    printf("Waiting for ack...");
-    fflush(stdout);
-
-    if((errnum=readFrameUDP(sockfd,0,NULL,&fr))==0)
-    {
-        if(fr.kind==ack && fr.fSize==fSize)
-        {
-            greenStdout("Received");
-            //printFrame(&fr);
-        }
-        else
-        {
-            yellowStdout("Receiver sent unexpected data");
-            //printFrame(&fr);
-        }
-    }
-    else if(errnum == -1)
-    {
-        return handleErrorRet(-2,"Receiver closed the connection");
-    }
-    else
-    {
-       return handleErrorRet(-1,"Error getting receiver file size ack"); 
-    }
-
-    return 0;
-}
-
 int slidingWindowProtocol(int sockfd, const unsigned int ws, struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile)
 {
     int errnum = 0;
@@ -348,6 +297,57 @@ int main(int argc, char* argv[])
     greenStdout("\nNo errors were encountered. Goodbye.\n");
 
     return EXIT_SUCCESS;
+}
+
+int notifyReceiverFileSize(int sockfd, intmax_t fSize, struct sockaddr_in *clientaddr)
+{
+    printf("Sending file size to receiver...");
+    fflush(stdout);
+    struct frame fr;
+    int errnum = 0;
+    memset(&fr,0,sizeof(fr));
+
+    fr.kind = data;
+    fr.seqNo = 0;
+    fr.fSize = fSize;
+
+    //printFrame(&fr);
+
+    if((errnum=sendFrameUDP(sockfd,&fr,clientaddr))!=0)
+    {
+        return handleErrorNoRet(errnum,errnum,"Error sending file size to receiver");
+    }
+
+    greenStdout("Success");
+
+    memset(&fr,0,sizeof(fr));
+
+    printf("Waiting for ack...");
+    fflush(stdout);
+
+    if((errnum=readFrameUDP(sockfd,0,NULL,&fr))==0)
+    {
+        if(fr.kind==ack && fr.fSize==fSize)
+        {
+            greenStdout("Received");
+            //printFrame(&fr);
+        }
+        else
+        {
+            yellowStdout("Receiver sent unexpected data");
+            //printFrame(&fr);
+        }
+    }
+    else if(errnum == -1)
+    {
+        return handleErrorRet(-2,"Receiver closed the connection");
+    }
+    else
+    {
+       return handleErrorRet(-1,"Error getting receiver file size ack"); 
+    }
+
+    return 0;
 }
 
 int getPacketFromFile(unsigned char *buf, FILE *inpFile)
