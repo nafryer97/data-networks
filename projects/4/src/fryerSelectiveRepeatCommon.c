@@ -1,55 +1,31 @@
 #include"fryerSelectiveRepeatCommon.h"
 
-void redStdout(const char *msg)
+int readFrameUDP(int sockfd, socklen_t sock_len, struct sockaddr_in *addr, struct frame *fr)
 {
-    printf("\033[0;31m");
-    printf("%s\n",msg);
-    printf("\033[0m");
+    size_t n = 0;
+    int errnum = 0;
+
+    if((n=recvfrom(sockfd,fr,sizeof(struct frame),0,(struct sockaddr *)addr,&sock_len)) < 0)
+    {
+        errnum =  errno;
+        return handleErrorNoRet(errnum,errnum,"Error receiving frame from socket");
+    }
+    else if (n==0)
+    {
+        return handleErrorRet(-1, "Connection was closed");
+    }
+
+    return 0;
 }
 
-void greenStdout(const char *msg)
-{
-    printf("\033[0;32m");
-    printf("%s\n",msg);
-    printf("\033[0m");
-}
-
-void yellowStdout(const char *msg)
-{
-    printf("\033[0;33m");
-    printf("%s\n",msg);
-    printf("\033[0m");
-}
-
-void blueStdout(const char *msg)
-{
-    printf("\033[0;34m");
-    printf("%s\n",msg);
-    printf("\033[0m");
-}
-
-void magentaStdout(const char *msg)
-{
-    printf("\033[0;35m");
-    printf("%s\n",msg);
-    printf("\033[0m");
-}
-
-void cyanStdout(const char *msg)
-{
-    printf("\033[0;36m");
-    printf("%s\n",msg);
-    printf("\033[0m");
-}
-
-char* readFromUDPSocket(int sockfd, socklen_t *sock_len, struct sockaddr_in *sockaddr)
+char* readFromUDPSocket(int sockfd, socklen_t sock_len, struct sockaddr_in *sockaddr)
 {
     int n = 0;
 
     char* sbuf = malloc(sizeof(char) * DEFAULT_BUFFER_SIZE);
     memset(sbuf, '\0', DEFAULT_BUFFER_SIZE);
     
-    if((n = recvfrom(sockfd,sbuf,(DEFAULT_BUFFER_SIZE-1),0,(struct sockaddr *)sockaddr,sock_len)) < 0)
+    if((n = recvfrom(sockfd,sbuf,(DEFAULT_BUFFER_SIZE-1),0,(struct sockaddr *)sockaddr,&sock_len)) < 0)
     {
         int errnum = errno;
         handleErrorNoMsg(errnum,"Error receiving data from socket");
@@ -65,9 +41,10 @@ int sendFrameUDP(int sockfd, const struct frame *fr, const struct sockaddr_in *d
 {
     int errnum = 0;
 
-    if(sendTo(sockfd,fr,sizeof((*fr)),MSG_CONFIRM,(struct sockaddr *)dest,sizeof((*dest)))<0)
+    if(sendto(sockfd,fr,sizeof((*fr)),MSG_CONFIRM,(struct sockaddr *)dest,sizeof((*dest)))<0)
     {
-
+        errnum=errno;
+        return handleErrorNoRet(errnum,errnum,"Error sending frame to socket.");
     }
 
     return 0;
@@ -225,68 +202,79 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
     }
 }
 
-int usage(char *arg1, char *arg2)
+void printFrame(const struct frame *fr)
 {
-    fprintf(stderr, "Usage: %s %s\n",arg1,arg2);
-    return EXIT_SUCCESS;
-}
+    char buf[DEFAULT_BUFFER_SIZE] = "";
+    const char *kind = NULL;
+    struct frame frCpy;
 
-void handleFatalErrorNo(int en, const char *msg, int sockfd)
-{
-    fprintf(stderr, "\033[1;31m");
-
-    if (sockfd >= 0)
+    memcpy(&frCpy,fr,sizeof(frCpy));
+    
+    if(fr->kind == data)
     {
-        close(sockfd);
-        fprintf(stderr, "Socket closed. ");
+        kind  = "Kind = data";
     }
-    
-    fprintf(stderr, "%s: %s\n",msg,strerror(en)); 
-    
-    exit(EXIT_FAILURE);
-}
-
-int handleErrorNoRet(int en, int retval, const char *msg)
-{
-    fprintf(stderr, "\033[1;31m");
-    fprintf(stderr, "%s: %s\n", msg, strerror(en));
-    fprintf(stderr, "\033[0m");
-    return retval;
-}
-
-void handleErrorNoMsg(int en, const char *msg)
-{
-    fprintf(stderr, "\033[1;31m");
-    fprintf(stderr, "%s: %s\n", msg, strerror(en));
-    fprintf(stderr, "\033[0m");
-}
-
-void handleFatalError(const char *msg, int sockfd)
-{
-    fprintf(stderr, "\033[1;31m");
-    
-    if (sockfd >= 0)
+    else if(fr->kind == ack)
     {
-        close(sockfd);
-        fprintf(stderr, "Socket closed. ");
+        kind = "Kind = ack";
     }
-    
-    fprintf(stderr, "%s\n",msg); 
-    
-    exit(EXIT_FAILURE);
+    else
+    {
+       kind = "Kind = nack";
+    }
+
+    frCpy.packet[MAX_PACK-1] = '\0';
+
+    snprintf(buf,(DEFAULT_BUFFER_SIZE-1),
+            "\nFrame Info:\n%s\nSequence Number: %u\nFile Size: %ju\nPacket Info: \n%s\n\n",
+            kind,frCpy.seqNo,frCpy.fSize,frCpy.packet);
+
+    printf("%s",buf);
 }
 
-int handleErrorRet(int retval, const char *msg)
+void printTransferStats(struct transfer_stats *stats)
 {
-    fprintf(stderr, "\033[1;31m");
-    fprintf(stderr, "%s\n", msg);
-    fprintf(stderr, "\033[0m");
-    return retval;
-}
+    char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
+    char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
+    char nackEntry[14] = "";
 
-void handleErrorMsg(const char *msg)
-{
-    fprintf(stderr, "\033[1;31m");
-    fprintf(stderr, "%s\n", msg);
-    fprintf(stderr, "\033[0m");
+    printf("\n\tPrinting Statistics\n");
+
+    if ((*stats).totNack > 0)
+    {
+        for(int i = 0; i < MAX_NACK_SEQ; ++i)
+        {
+            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
+            {
+                /* buffer overrun */
+                break;
+            }
+            else if (i == ((*stats).totNack-1))
+            {
+                /* last entry */
+                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                break;
+            } 
+            else
+            {
+                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
+                strncat(seqNackBuf,nackEntry,13);
+                memset(nackEntry,'\0',(sizeof(char)*14));
+            }
+        }
+    }
+
+    snprintf(statsBuf,
+            ((DEFAULT_BUFFER_SIZE*2)-1),
+            "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %sNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\nSequence numbers of negative acknowledgements: %s",
+            inet_ntoa((*stats).recvaddr.sin_addr),
+            ntohs((*stats).recvaddr.sin_port),
+            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
+            ctime(&(*stats).statbuf.st_mtime),
+            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
+
+    cyanStdout(statsBuf);
+
+    printf("\n\tComplete\n");
 }

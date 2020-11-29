@@ -30,13 +30,12 @@ struct sender_info
     int sockfd;
     struct sockaddr_in serveraddr;
     char inpFileName[SMALL_BUFFER_SIZE];
-    char outFileName[SMALL_BUFFER_SIZE];
 };
 
 
 int main(int argc, char *argv[]);
 
-void setup(int port, char *address, struct user_info *credentials, struct sender_info *sender, int *windowSize);
+void setup(int port, char *address, char* outName, FILE **outFile,struct user_info *credentials, struct sender_info *sender, int *windowSize);
 
 int confirmTransfer(struct sender_info *sender);
 

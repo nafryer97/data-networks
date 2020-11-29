@@ -1,18 +1,15 @@
 #ifndef FRYERP4_COMMON_H
 #define FRYERP4_COMMON_H
 
-#include<stdio.h>
-#include<unistd.h>
-#include<stdlib.h>
+#include"fryerSelectiveRepeatMessaging.h"
+
 #include<sys/types.h>
 #include<sys/stat.h>
-#include<string.h>
 #include<stdint.h>
 #include<time.h>
 #include<sys/socket.h>
 #include<netinet/in.h>
 #include<arpa/inet.h>
-#include<errno.h>
 #include<netdb.h>
 #include<pthread.h>
 
@@ -93,7 +90,7 @@ struct frame
 {
     enum fr_kind kind;
     unsigned int seqNo;
-    unsigned int ackNo;
+    intmax_t fSize;
     unsigned char packet[MAX_PACK];
 };
 
@@ -109,19 +106,11 @@ struct transfer_stats
     int seqNack[MAX_NACK_SEQ];
 };
 
-void redStdout(const char *msg);
+int readFrameUDP(int sockfd, socklen_t sock_len, struct sockaddr_in *addr, struct frame *fr);
 
-void greenStdout(const char *msg);
+char* readFromUDPSocket(int sockfd, socklen_t socklen, struct sockaddr_in *sockaddr);
 
-void yellowStdout(const char *msg);
-
-void blueStdout(const char *msg);
-
-void magentaStdout(const char *msg);
-
-void cyanStdout(const char *msg);
-
-char* readFromUDPSocket(int sockfd, socklen_t *socklen, struct sockaddr_in *sockaddr);
+int sendFrameUDP(int sockfd, const struct frame *fr, const struct sockaddr_in *dest);
 
 int sendToUDPSocket(int sockfd, const char* str, struct sockaddr_in *dest);
 
@@ -135,18 +124,8 @@ int createUDPClientSocket(int port, const char* address, int *sockfd, struct soc
 
 int createUDPServerSocket(int port, struct sockaddr_in *serveraddr);
 
-int usage(char *arg1, char *arg2);
+void printFrame(const struct frame *fr);
 
-void handleFatalErrorNo(int en, const char *msg, int sockfd);
-
-int handleErrorNoRet(int en, int retval, const char *msg);
-
-void handleErrorNoMsg(int en, const char *msg);
-
-void handleFatalError(const char *msg, int sockfd);
-
-int handleErrorRet(int retval, const char *msg);
-
-void handleErrorMsg(const char *msg);
+void printTransferStats(struct transfer_stats *stats);
 
 #endif

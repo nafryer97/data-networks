@@ -1,57 +1,217 @@
 #include"fryerSelectiveRepeatSender.h"
 
-int slidingWindowProtocol(int sockfd, int windowSize,struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile)
+int notifyReceiverFileSize(int sockfd, intmax_t fSize, struct sockaddr_in *clientaddr)
 {
+    printf("Sending file size to receiver...");
+    fflush(stdout);
     struct frame fr;
-    memset(&fr, 0, sizeof(fr));
-
-    unsigned char packBuf[MAX_PACK] = "";
     int errnum = 0;
-    int totPack = 0;
+    memset(&fr,0,sizeof(fr));
 
-    totPack = (((int)(*stats).statbuf.st_size)+((int)(*stats).statbuf.st_size % MAX_PACK))/MAX_PACK;
+    fr.kind = data;
+    fr.seqNo = 0;
+    fr.fSize = fSize;
+
+    //printFrame(&fr);
+
+    if((errnum=sendFrameUDP(sockfd,&fr,clientaddr))!=0)
+    {
+        return handleErrorNoRet(errnum,errnum,"Error sending file size to receiver");
+    }
+
+    greenStdout("Success");
+
+    memset(&fr,0,sizeof(fr));
+
+    printf("Waiting for ack...");
+    fflush(stdout);
+
+    if((errnum=readFrameUDP(sockfd,0,NULL,&fr))==0)
+    {
+        if(fr.kind==ack && fr.fSize==fSize)
+        {
+            greenStdout("Received");
+            //printFrame(&fr);
+        }
+        else
+        {
+            yellowStdout("Receiver sent unexpected data");
+            //printFrame(&fr);
+        }
+    }
+    else if(errnum == -1)
+    {
+        return handleErrorRet(-2,"Receiver closed the connection");
+    }
+    else
+    {
+       return handleErrorRet(-1,"Error getting receiver file size ack"); 
+    }
+
+    return 0;
+}
+
+int slidingWindowProtocol(int sockfd, const unsigned int ws, struct transfer_stats *stats, struct sockaddr_in *clientaddr, FILE *inpFile)
+{
+    int errnum = 0;
+    unsigned int totPack = 0;
+    unsigned int nt = 0;
+    unsigned int na = 0;
+    struct frame frBuf[ws];
+    struct frame cliFr;
+
+    totPack = ((unsigned int) 
+            (((*stats).statbuf.st_size+
+                ((*stats).statbuf.st_size % (intmax_t)MAX_PACK)) 
+             / ((intmax_t)MAX_PACK)));
 
     printf("Transferring a file size %ju will require %u packets of size %u\n",
             (intmax_t)(*stats).statbuf.st_size,totPack,MAX_PACK);
+
+    if((errnum = notifyReceiverFileSize(sockfd, (intmax_t)(*stats).statbuf.st_size, clientaddr)) != 0)
+    {
+        return handleErrorRet(-1,"Abandoning sliding window protocol");
+    }
+
+    unsigned short acked[totPack];
+
+    for(int i =0; i < totPack; ++i)
+    {
+        acked[i] = 0;
+    }
     
-    errnum = getPacketFromFile(packBuf, inpFile);
-
-    while(errnum == 0)
+    for(int i = 0; i < ws; ++i)
     {
+        memset(&frBuf[i],0,sizeof(struct frame));
+
+        frBuf[i].kind=data;
+        frBuf[i].seqNo=nt+i;
+
+        if((frBuf[i].fSize = getPacketFromFile(frBuf[i].packet,inpFile))<0)
+        {
+            return handleErrorRet(-1,"Abandoning sliding window protocol");
+        }
+        if(feof(inpFile)!=0)
+        {
+            break;
+        }
 
     }
-
-
-
-
-
-    /*   
-    if((errnum = getPacketFromFile(packBuf,inpFile)) == 0)
+    for(int i = 0; i < ws; ++i)
     {
-        yellowStdout(packBuf);
-    }
-    else if (errnum == 1)
-    {
-        yellowStdout(packBuf);
-    }
-    else if (errnum == 2)
-    {
-        yellowStdout(packBuf);
-    }
-    else if (errnum == -1)
-    {
-        handleErrorRet(-1, "Error constructing packet data.");
-    }
-    else if (errnum == -2)
-    {
-        handleErrorRet(-2, "Error constructing packet data.");
-    }
-    else if(errnum == 3)
-    {
-        handleErrorRet(3, "Error constructing packet data.");
-    }
-    */
+        yellowStdout("\nSending Frame:");
+        printFrame(&frBuf[i]);
 
+        if((errnum=sendFrameUDP(sockfd,&frBuf[i],clientaddr))!=0)
+        {
+            return handleErrorRet(-2,"Error sending data to receiver");
+        }
+                
+        ++(*stats).totPack;
+        ++nt;
+    }
+
+    //printf("Window size: %u\n", ws);
+
+    while((errnum==0) && (na < totPack))
+    {
+        while((ws+na-nt)<=0)
+        {
+            memset(&cliFr,0,sizeof(cliFr));
+
+            if((errnum=readFrameUDP(sockfd,0,NULL,&cliFr))!=0)
+            {
+                return handleErrorRet(-3,"Error getting frame from receiver");
+            }
+            if((cliFr.kind == ack) && (cliFr.seqNo < (ws+na)))
+            {
+                acked[cliFr.seqNo] = 1;
+                ++(*stats).totAck;
+                
+                printf("na: %u\n",na);
+
+                if(cliFr.seqNo == na)
+                {
+                    ++na;
+                    magentaStdout("Acked");
+                    for(int i = 1; i < ws; ++i)
+                    {
+                        if(acked[cliFr.seqNo + i] == 1)
+                        {
+                            ++na;
+                        }
+                    }
+                }
+            }
+            else if((cliFr.kind == nack) && (cliFr.seqNo < (ws+na)))
+            {
+                ++(*stats).totNack;
+                (*stats).seqNack[cliFr.seqNo] = cliFr.seqNo;
+                /*
+                for(int i = 0; (i < ws) && (i < (cliFr.seqNo - na + 1)); ++i)
+                {
+                    if(acked[i+na] == 0)
+                    {
+                        if((errnum=sendFrameUDP(sockfd,&frBuf[i],clientaddr))!=0)
+                        {
+                            return handleErrorNoRet(errnum,errnum,"Error sending data to receiver");
+                        }
+                    }
+                }
+                */
+            }
+            else if ((cliFr.kind == data) || (cliFr.seqNo > (ws+na)))
+            {
+                yellowStdout("Receiver sent unexpected data");
+                printFrame(&cliFr);
+            }
+            
+            cyanStdout("\nReceived Frame:");
+            printFrame(&cliFr);
+
+        }
+        
+        for(int i = 0; i < ws; ++i)
+        {
+            if (na < 1)
+            {
+                redStdout("Frame 0 not yet acked.");
+                break;
+            }
+            else if(acked[i+na-1] == 1 && (feof(inpFile)==0))
+            {
+                memset(&frBuf[i],0,sizeof(struct frame));
+                frBuf[i].kind=data;
+                frBuf[i].seqNo=nt+i;
+
+                if((frBuf[i].fSize = getPacketFromFile(frBuf[i].packet,inpFile))<0)
+                {
+                    return handleErrorRet(-1,"Abandoning sliding window protocol");
+                }
+                magentaStdout("New packet:");
+                printFrame(&frBuf[i]);
+            }
+        }
+        
+        for(int i = 0; i < ws; ++i)
+        {
+            if(acked[na+i] == 0)
+            {
+                yellowStdout("\nSending Frame:");
+                printFrame(&frBuf[i]);
+
+                if((errnum=sendFrameUDP(sockfd,&frBuf[i],clientaddr))!=0)
+                {
+                    return handleErrorRet(-2,"Error sending data to receiver");
+                }
+                   
+                ++(*stats).totPack;
+                ++nt;
+            }
+        }
+    }
+       
+    return 0;
 }
 
 int transferProgram(int sockfd,int windowSize, struct sockaddr_in *clientaddr,char *fileName,FILE *inpFile)
@@ -64,7 +224,10 @@ int transferProgram(int sockfd,int windowSize, struct sockaddr_in *clientaddr,ch
 
     printf("Using file: %s\nStarting transfer procedures...",fileName);
 
-    slidingWindowProtocol(sockfd, windowSize,clientaddr, &stats, inpFile);
+    if(slidingWindowProtocol(sockfd,windowSize,&stats,clientaddr,inpFile)!=0)
+    {
+        return handleErrorRet(-1,"Sliding window protocol failed");
+    }
 
     return 0;
 }
@@ -131,7 +294,10 @@ int main(int argc, char* argv[])
             /* Receiver Confirmed that they had received window size */
             if((confirm = getFileInfo(sockfd, &clientaddr, &fileName, &inpFile)) == 0)
             {
-                transferProgram(sockfd,windowSize,&clientaddr,fileName,inpFile);
+                if(transferProgram(sockfd,windowSize,&clientaddr,fileName,inpFile)!=0)
+                {
+                    break;
+                }
             }
             else if (confirm == 1)
             {
@@ -190,7 +356,7 @@ int getPacketFromFile(unsigned char *buf, FILE *inpFile)
     if(ret == MAX_PACK)
     {
         /* no errors */
-        return 0;
+        return ret;
     }
     else if(ret>0)
     {
@@ -198,7 +364,7 @@ int getPacketFromFile(unsigned char *buf, FILE *inpFile)
         if(feof(inpFile)!=0)
         {
             yellowStdout("End of File");
-            return 1;
+            return ret;
         }
         else if (ferror(inpFile)!=0)
         {
@@ -218,7 +384,7 @@ int getPacketFromFile(unsigned char *buf, FILE *inpFile)
         }
     }
 
-    return 3;
+    return -3;
 }
 
 int checkFile(char *fileName, FILE **inpFile)
@@ -242,7 +408,7 @@ int getFileInfo(int sockfd, struct sockaddr_in *clientaddr, char **fileName, FIL
         printf("Waiting for file name...");
         fflush(stdout);
     
-        if(((*fileName) = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+        if(((*fileName) = readFromUDPSocket(sockfd,0,NULL)) == NULL)
         {
             return handleErrorRet(-1, "Error");
         }
@@ -306,7 +472,7 @@ int getReceiverInfo(int sockfd, struct sockaddr_in *clientaddr, struct user_list
     printf("Welcome, %s\nWaiting for file transfer confirmation...",(*userList).users[userInd].name);
     fflush(stdout);
 
-    if((confirm = readFromUDPSocket(sockfd,NULL,NULL)) == NULL)
+    if((confirm = readFromUDPSocket(sockfd,0,NULL)) == NULL)
     {
         return handleErrorRet(-1,"Error waiting for confirmation");
     }
@@ -350,7 +516,7 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
         printf("Waiting for username...");
         fflush(stdout);
         
-        if((name = readFromUDPSocket(sockfd, &socklen, clientaddr)) == NULL)
+        if((name = readFromUDPSocket(sockfd, socklen, clientaddr)) == NULL)
         {
             return handleErrorRet(-1, "Error waiting for username");        
         }
@@ -365,7 +531,7 @@ int authenticate(int sockfd, struct sockaddr_in *clientaddr, struct user_list *u
         printf("Waiting for password...");
         fflush(stdout);
 
-        if((password = readFromUDPSocket(sockfd, &socklen, clientaddr)) == NULL)
+        if((password = readFromUDPSocket(sockfd, 0, NULL)) == NULL)
         {
             free(name);
             return handleErrorRet(-1, "Error waiting for password");        
@@ -555,53 +721,6 @@ int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct
     greenStdout("Success.");
 
     return 0;
-}
-
-void printTransferStats(struct transfer_stats *stats)
-{
-    char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
-    char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
-    char nackEntry[14] = "";
-
-    printf("\n\tPrinting Statistics\n");
-
-    if ((*stats).totNack > 0)
-    {
-        for(int i = 0; i < MAX_NACK_SEQ; ++i)
-        {
-            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
-            {
-                /* buffer overrun */
-                break;
-            }
-            else if (i == ((*stats).totNack-1))
-            {
-                /* last entry */
-                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                break;
-            } 
-            else
-            {
-                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                memset(nackEntry,'\0',(sizeof(char)*14));
-            }
-        }
-    }
-
-    snprintf(statsBuf,
-            ((DEFAULT_BUFFER_SIZE*2)-1),
-            "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %sNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\nSequence numbers of negative acknowledgements: %s",
-            inet_ntoa((*stats).recvaddr.sin_addr),
-            ntohs((*stats).recvaddr.sin_port),
-            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
-            ctime(&(*stats).statbuf.st_mtime),
-            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
-
-    cyanStdout(statsBuf);
-
-    printf("\n\tComplete\n");
 }
 
 void *thr_createUserList(void *info)

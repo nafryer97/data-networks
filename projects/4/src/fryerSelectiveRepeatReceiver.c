@@ -1,8 +1,149 @@
 #include"fryerSelectiveRepeatReceiver.h"
 
-int fileTransfer(char *outFile, struct sender_info *sender)
+intmax_t  waitForFileSize(struct sender_info *sender)
 {
+    int errnum = 0;
+    struct frame fr;
+    char buf[SMALL_BUFFER_SIZE] = "";
+   
+    memset(&fr,0,sizeof(fr));
 
+    printf("Waiting for file size...");
+
+    if((errnum = readFrameUDP((*sender).sockfd,0,NULL,&fr))==0)
+    {
+        if(fr.kind==data)
+        {
+            snprintf(buf, (SMALL_BUFFER_SIZE-1),"Received: %ju",fr.fSize);
+            greenStdout(buf);
+            printFrame(&fr);
+        }
+        else
+        {
+            return handleErrorRet(-1,"Expected file size from sender");
+            printFrame(&fr);
+        }
+    }
+    else if(errnum == -1)
+    {
+        return handleErrorRet(-2,"Sender closed the connection");
+    }
+        
+    printf("Sending ack...");
+    fflush(stdout);
+
+    fr.kind = ack;
+
+    if((errnum=sendFrameUDP((*sender).sockfd,&fr,&(*sender).serveraddr))!=0)
+    {
+        return handleErrorNoRet(errnum,errnum,"Error sending ack");
+    } 
+    else
+    {
+        greenStdout("Success");
+    }
+
+    return fr.fSize;
+}
+
+int writePacket(FILE *outFile, const unsigned char *pack)
+{
+   size_t ret = fwrite(pack,sizeof(*pack),MAX_PACK,outFile);
+   if(ret == MAX_PACK)
+   {    
+       return 0;
+   }
+   else if(ret>0)
+   {
+       /* wrote some stuff, but not everything */
+       return -1;
+   }
+   else
+   {
+       /* wrote nothing */
+       return -2;
+   }
+}
+
+int fileTransfer(FILE *outFile, struct sender_info *sender, unsigned int wr)
+{
+    int errnum = 0;
+    unsigned int totPack = 0;
+    unsigned int nr = 0;
+    unsigned int ns = 1;
+    intmax_t fileSize = 0;
+    struct frame frBuf[wr];
+    struct frame fr;
+
+    if((fileSize=waitForFileSize(sender))<=0)
+    {
+        handleErrorRet(-1,"Abandoning file transfer");
+    }
+    
+    totPack = (unsigned int)((fileSize+(fileSize % ((intmax_t)MAX_PACK)))/((intmax_t)MAX_PACK));
+
+    printf("Transferring a file size %ju will require %u packets of size %u\n",
+            fileSize,totPack,MAX_PACK);
+   
+    memset(&fr,0,sizeof(fr));
+    while((errnum=readFrameUDP((*sender).sockfd,0,NULL,&fr))==0)
+    {
+        if((fr.seqNo == nr) && (fr.kind==data))
+        {
+            //frame arrived in order
+            writePacket(outFile, fr.packet);
+            fr.kind=ack;
+            ++nr;
+        }
+        else if((fr.kind == data) && (fr.seqNo > nr) && (fr.seqNo < (wr+nr)) && (1 < wr))
+        {
+            // frame arrived out of order but within window, buffer it
+            memcpy(&frBuf[fr.seqNo-nr],&fr,sizeof(fr));
+            fr.kind=ack;
+        }
+        else if((fr.kind == nack) && (fr.seqNo <= nr))
+        {
+            // sender lost one of our acks
+            fr.kind=ack;
+        }
+        else
+        {
+            // frame arrived outside of window, discard it
+            fr.kind=nack;
+        }
+
+        //send ack or nack
+        if((errnum=sendFrameUDP((*sender).sockfd,&fr,&(*sender).serveraddr))!=0)
+        {
+            handleErrorNoRet(errnum,errnum,"Abandoning file transfer");
+        }
+
+        //check if acked frame is the highest seqno we've received so far
+        if(fr.kind==ack && fr.seqNo >= ns)
+        {
+            ns=fr.seqNo+1;
+        }
+
+        //check to see if the buffer contains the next packet in the sequence
+        for(int i = 0;(i < wr) && ((nr+i) < ns) && (frBuf[i].seqNo!=0) && (1 < wr); ++i)
+        {
+            if(frBuf[i].seqNo == nr)
+            {
+                writePacket(outFile, frBuf[i].packet);
+                memset(&frBuf[i],0,sizeof(struct frame));
+                ++nr;
+            }
+        }
+
+        if(nr==totPack)
+        {
+            greenStdout("Complete");
+            break;
+        }
+
+        memset(&fr,0,sizeof(fr));
+    }
+    
     return 0;
 }
 
@@ -14,7 +155,9 @@ int main(int argc, char* argv[])
     char msg[SMALL_BUFFER_SIZE] = "";
     char* address;
     char *inpFile;
-    char *outFile;
+    char *outName;
+
+    FILE *outFile = NULL;
 
     struct sender_info sender;
     struct user_info credentials;
@@ -40,7 +183,7 @@ int main(int argc, char* argv[])
                     inpFile = optarg;
                     break;
                 case 'o':
-                    outFile = optarg;
+                    outName = optarg;
                     break;
                 case ':':
                     printf("-%c requires an argument.\n", optopt);
@@ -60,7 +203,7 @@ int main(int argc, char* argv[])
         return usage(argv[0], RECEIVER_USAGE);
     }
 
-    setup(port, address, &credentials, &sender, &windowSize);
+    setup(port, address,outName,&outFile,&credentials, &sender, &windowSize);
  
     snprintf(msg, (SMALL_BUFFER_SIZE-1), "Authentication Successful. Window size is %i", windowSize);
     greenStdout(msg);
@@ -73,10 +216,11 @@ int main(int argc, char* argv[])
         if((res = sendFileInfo(inpFile, &sender)) == 0)
         {
             /* server accepted file name */
-            if((res = fileTransfer(outFile, &sender)) != 0)
+            if((res = fileTransfer(outFile, &sender,windowSize)) != 0)
             {
                 handleFatalError("Exiting...",sender.sockfd);
             }
+            
 
         }
         else if(res == 1)
@@ -118,7 +262,7 @@ int main(int argc, char* argv[])
     return EXIT_SUCCESS;
 }
 
-void setup(int port, char *address, struct user_info *credentials, struct sender_info *sender, int *windowSize)
+void setup(int port, char *address, char *outName, FILE **outFile, struct user_info *credentials, struct sender_info *sender, int *windowSize)
 {
     strncpy((*sender).addrStr,address,SMALL_BUFFER_SIZE);
     (*sender).port = port;
@@ -126,6 +270,11 @@ void setup(int port, char *address, struct user_info *credentials, struct sender
     if(((*sender).sockfd = createUDPClientSocket((*sender).port,(*sender).addrStr, &(*sender).sockfd,&(*sender).serveraddr)) < 0)
     {
         handleFatalError("Exiting...", -1);
+    }
+
+    if(((*outFile) = fopen(outName,"w"))==NULL)
+    {
+        handleFatalErrorNo(errno, "Error creating output file",(*sender).sockfd);
     }
 
     if(getCredentials(credentials) < 0)
@@ -241,7 +390,7 @@ int sendFileInfo(char *inpFile, struct sender_info *sender)
             return handleErrorRet(-1,"Error sending file name");
         }
 
-        if((response = readFromUDPSocket((*sender).sockfd,NULL,NULL))==NULL)
+        if((response = readFromUDPSocket((*sender).sockfd,0,NULL))==NULL)
         {
             return handleErrorRet(-1,"Error waiting for confirmation receipt");
         }
@@ -293,7 +442,7 @@ int waitForConfirmation(struct sender_info *sender)
 
     //yellowStdout("Waiting for confirmation...");
 
-    if((response = readFromUDPSocket((*sender).sockfd,NULL,NULL))==NULL)
+    if((response = readFromUDPSocket((*sender).sockfd,0,NULL))==NULL)
     {
         return handleErrorRet(-1,"Error waiting for confirmation receipt");
     }
@@ -343,7 +492,7 @@ int sendCredentials(const char *name, const char *password, struct sender_info *
         return res;
     }
 
-    if((response = readFromUDPSocket((*sender).sockfd,NULL,NULL))==NULL)
+    if((response = readFromUDPSocket((*sender).sockfd,0,NULL))==NULL)
     {
         return handleErrorRet(-1,"Error waiting for auth message");
     }
