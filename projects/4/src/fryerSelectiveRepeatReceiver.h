@@ -32,10 +32,20 @@ struct sender_info
     char inpFileName[SMALL_BUFFER_SIZE];
 };
 
+struct thr_setup
+{
+    struct sender_info *sender;
+    struct transfer_stats *trStats;
+    FILE **outFile;
+    char *outName;
+};
+
 
 int main(int argc, char *argv[]);
 
-void setup(int port, char *address, char* outName, FILE **outFile,struct user_info *credentials, struct sender_info *sender, int *windowSize);
+void *thr_setup(void *thr_setup_info);
+
+void setup(char* outName, FILE **outFile,struct user_info *credentials,struct transfer_stats *trStats, struct sender_info *sender, int *windowSize);
 
 int confirmTransfer(struct sender_info *sender);
 

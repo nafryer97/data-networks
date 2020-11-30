@@ -90,7 +90,7 @@ struct frame
 {
     enum fr_kind kind;
     unsigned int seqNo;
-    intmax_t fSize;
+    size_t fSize;
     unsigned char packet[MAX_PACK];
 };
 
@@ -124,8 +124,10 @@ int createUDPClientSocket(int port, const char* address, int *sockfd, struct soc
 
 int createUDPServerSocket(int port, struct sockaddr_in *serveraddr);
 
+int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr);
+
 void printFrame(const struct frame *fr);
 
-void printTransferStats(struct transfer_stats *stats);
+void printTransferStats(struct transfer_stats *stats, FILE *outStream);
 
 #endif

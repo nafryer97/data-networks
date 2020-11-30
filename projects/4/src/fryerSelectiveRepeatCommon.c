@@ -202,6 +202,36 @@ int createUDPServerSocket(int port, struct sockaddr_in *serveraddr)
     }
 }
 
+int statInit(char *fileName, FILE *inpFile, struct transfer_stats *stats, struct sockaddr_in *clientaddr)
+{
+    int fd = -1;
+    int errnum = -1;
+   
+    printf("Initializing statistics structure...");
+    fflush(stdout);
+
+    memset(stats, 0, sizeof((*stats)));
+    memcpy(&(*stats).recvaddr,clientaddr,sizeof((*stats).recvaddr)); 
+    
+    if((fd = fileno(inpFile)) == -1)
+    {
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file descriptor");
+    }
+
+    if(fstat(fd,&(*stats).statbuf) != 0)
+    {
+        errnum = errno;
+        return handleErrorNoRet(errnum, -1, "Error retrieving file stats");
+    }
+
+    strncpy((*stats).fileName, fileName, SMALL_BUFFER_SIZE);
+
+    greenStdout("Success.");
+
+    return 0;
+}
+
 void printFrame(const struct frame *fr)
 {
     char buf[DEFAULT_BUFFER_SIZE] = "";
@@ -232,49 +262,39 @@ void printFrame(const struct frame *fr)
     printf("%s",buf);
 }
 
-void printTransferStats(struct transfer_stats *stats)
+void printTransferStats(struct transfer_stats *stats, FILE *outStream)
 {
     char statsBuf[(DEFAULT_BUFFER_SIZE*2)] = "";
     char seqNackBuf[DEFAULT_BUFFER_SIZE] = "";
     char nackEntry[14] = "";
 
-    printf("\n\tPrinting Statistics\n");
-
-    if ((*stats).totNack > 0)
+    for(int i = 0; (i < MAX_NACK_SEQ) && (i<stats->totNack) &&
+            (strlen(seqNackBuf) < (DEFAULT_BUFFER_SIZE-6)); ++i)
     {
-        for(int i = 0; i < MAX_NACK_SEQ; ++i)
-        {
-            if (strlen(seqNackBuf) > (DEFAULT_BUFFER_SIZE-6))
-            {
-                /* buffer overrun */
-                break;
-            }
-            else if (i == ((*stats).totNack-1))
-            {
-                /* last entry */
-                snprintf(nackEntry,13,"%5u",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                break;
-            } 
-            else
-            {
-                snprintf(nackEntry,13,"%4u, ",(*stats).seqNack[i]);
-                strncat(seqNackBuf,nackEntry,13);
-                memset(nackEntry,'\0',(sizeof(char)*14));
-            }
-        }
+        snprintf(nackEntry,13,"%u ",stats->seqNack[i]);
+        strncat(seqNackBuf,nackEntry,13);
+        memset(nackEntry,'\0',(sizeof(char)*14));
     }
 
     snprintf(statsBuf,
             ((DEFAULT_BUFFER_SIZE*2)-1),
             "Receiver address: %s Port: %-9hu\nFile Name: %s File Size: %ju bytes\nFile Creation Date & Time: %sNumber of Data Packets Transmitted: %u\nNumber of Packets Re-transmitted: %u\nNumber of Acknowledgements Received: %u\nNumber of Negative Acknowledgements Received %u\nSequence numbers of negative acknowledgements: %s",
-            inet_ntoa((*stats).recvaddr.sin_addr),
-            ntohs((*stats).recvaddr.sin_port),
-            (*stats).fileName,(intmax_t)(*stats).statbuf.st_size,
-            ctime(&(*stats).statbuf.st_mtime),
-            (*stats).totPack,(*stats).totRetr,(*stats).totAck,(*stats).totNack,seqNackBuf);
+            inet_ntoa(stats->recvaddr.sin_addr),
+            ntohs(stats->recvaddr.sin_port),
+            stats->fileName,(intmax_t)stats->statbuf.st_size,
+            ctime(&stats->statbuf.st_mtime),
+            stats->totPack,stats->totRetr,stats->totAck,stats->totNack,seqNackBuf);
 
-    cyanStdout(statsBuf);
+    if(outStream == NULL)
+    {
+        printf("\n\tPrinting Statistics\n");
+        cyanStdout(statsBuf);
+        printf("\n\tComplete\n");
+    }
+    else
+    {
+        fprintf(stderr,"Printed %i characters to specified file.\n",
+                fprintf(outStream,"\n\t%s\n%s\n\t%s\n","Transfer Statistics",statsBuf,"End"));
+    }
 
-    printf("\n\tComplete\n");
 }
