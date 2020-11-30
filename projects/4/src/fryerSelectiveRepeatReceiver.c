@@ -81,6 +81,13 @@ int fileTransfer(FILE *outFile, struct sender_info *sender, unsigned int wr, str
     size_t fileSize = 0;
     struct frame frBuf[wr];
     struct frame fr;
+    FILE *diags = NULL;
+    char msg[MEDIUM_BUFFER_SIZE] = "";
+
+    if((diags=fopen("diags_receiver","w")) == NULL)
+    {
+        handleErrorMsg("Error opening receiver diags file");
+    }
 
     if((fileSize=waitForFileSize(sender))<=0)
     {
@@ -92,9 +99,17 @@ int fileTransfer(FILE *outFile, struct sender_info *sender, unsigned int wr, str
                       (fileSize % ((size_t)MAX_PACK))) /
                         ((size_t)MAX_PACK)));
 
-    printf("Transferring a file size %ju will require %u packets of size %u\n",
+    snprintf(msg,(MEDIUM_BUFFER_SIZE-1),
+            "Transferring a file size %ju will require %u packets of size %u",
             fileSize,totPack,MAX_PACK);
+
+    printf("%s\n",msg);
+    if(diags!=NULL)
+    {
+        fprintf(diags,"%s\n",msg);
+    }
    
+    memset(msg,'\0',MEDIUM_BUFFER_SIZE);
     memset(&fr,0,sizeof(fr));
     while((errnum=readFrameUDP(sender->sockfd,0,NULL,&fr))==0)
     {
@@ -115,7 +130,19 @@ int fileTransfer(FILE *outFile, struct sender_info *sender, unsigned int wr, str
         else if((fr.seqNo >= totPack) && (fr.kind == ack) && (fr.fSize == strlen("end")) && (strcmp((char *)fr.packet,"end")==0))
         {
             /* sender says this is the end of the file */
-            greenStdout("Sender completed transfer");
+            snprintf(msg,(MEDIUM_BUFFER_SIZE-1),"%s","Sender completed transfer");
+            greenStdout(msg);
+
+            if(diags!=NULL)
+            {
+                fprintf(diags,"%s\n",msg);
+                printTransferStats(stats,diags);
+            }
+   
+            memset(msg,'\0',MEDIUM_BUFFER_SIZE);
+
+            printTransferStats(stats,NULL);
+
             sendFrameUDP(sender->sockfd,&fr,&sender->serveraddr);
             return 0;
         }
